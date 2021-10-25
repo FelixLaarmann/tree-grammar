@@ -1,0 +1,54 @@
+name:                tree-grammar
+version:             0.1.0.0
+github:              "FelixLaarmann/tree-grammar"
+license:             Apache-2.0
+author:              "Felix Laarmann, Jan Bessai, Christoph Stahl"
+maintainer:          "felix.laarmann@tu-dortmund.de, jan.bessai@tu-dortmund.de, christoph.stahl@tu-dortmund.de"
+copyright:           "2021 Felix Laarmann, Jan Bessai, Christoph Stahl"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/FelixLaarmann/tree-grammar#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+- containers
+- unification-fd
+
+library:
+  source-dirs: src
+
+executables:
+  tree-grammar-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - tree-grammar
+    when:
+    - condition: false
+      other-modules: Paths_tree_grammar
+
+
+tests:
+  tree-grammar-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - tree-grammar

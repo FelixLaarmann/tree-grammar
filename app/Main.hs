@@ -1,5 +1,6 @@
 module Main where
-import Tree
+
+import Lib
 
 main :: IO ()
-main = putStrLn "Hello, Haskell!"
+main = someFunc
