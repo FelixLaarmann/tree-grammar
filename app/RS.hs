@@ -23,7 +23,7 @@ type RS t v = [(UTerm (Term t) v, UTerm (Term t) v)]
 
 {-
 symbols returns all symbols of a term.
-We assume that application is left-associative and therefor the symbol of a term is in the
+We assume that application is left-associative and therefor the "root-symbol" of a term is in the
 "left-most" leaf.
 -}
 symbolsOf :: Eq t => RS t v -> [(t, Int)]

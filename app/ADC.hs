@@ -105,7 +105,8 @@ mguSubsets' ts = fromErrorList $ map evalFBM $ either (\_ -> []) (\x -> x) $ eva
     fromErrorList (Right t : es) = t : fromErrorList es
 
 {-
-Laut Jan kann es beim CLS nur null- oder zweistellige Transitionen geben
+deltaR' computes the transitions, when constructing an adc from a rewriting system rs.
+For simplicity deltaR' is abstract over the final states of the adc to construct from rs.
 -}
 deltaR' :: RS String IntVar -> [UTerm (Term String) IntVar]
   -> [Transition (Q0 String IntVar) String]
@@ -131,6 +132,7 @@ deltaR' rs qr = tops ++ nullaryConstraints ++ binaryConstraints where
     s <- nullarySymbols
     case (evalFBM $ mgu $
           instanceOfSome (UTerm $ Symbol s) q0without) of
+      --here is a problem, because there is a free variable x in q0without and therefor each term is trivially an instance of x.
       Right u -> do
         guard (elemByTerms' u qr)
         l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 rs
@@ -146,6 +148,7 @@ deltaR' rs qr = tops ++ nullaryConstraints ++ binaryConstraints where
     s <- binarySymbols
     case (evalFBM $ mgu $
           instanceOfSome (UTerm $ App (UTerm $ App (UTerm $ Symbol s) (fst p)) (snd p)) q0without) of
+      --here is a problem, because there is a free variable x in q0without and therefor each term is trivially an instance of x.
       Right u -> do
         guard (elemByTerms' u qr)
         l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 rs
@@ -157,6 +160,11 @@ deltaR' rs qr = tops ++ nullaryConstraints ++ binaryConstraints where
           Nothing -> mzero
       Left _ -> mzero
 
+{-
+constructNfADC constructs an automata with disequality constraints (ADC) from a given
+rewriting system rs.
+This function implements phase 2 of Lukasz algorithm.
+-}
 constructNfADC :: RS String IntVar -> ADC (Q0 String IntVar) String
 constructNfADC rs = ADC{
   states = qr,
@@ -170,6 +178,10 @@ constructNfADC rs = ADC{
      \q0wQr -> return $ AcceptOnlyReducible : (map Q q0wQr))
 
 {-
+productADC computes the product ADC for two given ADC's.
+This function implements phase 3 of Lukasz algorithm.
+
+Note:
 We assume that the symbols/terminals have the same type.
 And symbols with the same "name" have the same arity.
 -}
@@ -195,7 +207,13 @@ productADC a1 a2 = ADC {
             Transition s Nothing (target t1, target t2) (dConstraint t1 && dConstraint t2)
                        }
 
---For Debugging... There is a problem with deltaR', because nullaryConstraints and binaryConstraints are empty for exampleRS
+
+{-
+Everything below is for Debugging...
+There is a problem with deltaR', because nullaryConstraints and binaryConstraints are empty for exampleRS
+
+Usually exampleRS is part of app/Examples.hs
+-}
 exampleRS :: RS String IntVar
 exampleRS = [(UTerm $ App (UTerm (App (UTerm $ Symbol "f") (UVar $ IntVar 0))) (UVar $ IntVar 0),
               UTerm $ Symbol "a"),

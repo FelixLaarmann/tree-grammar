@@ -25,6 +25,9 @@ instance Eq t => Unifiable (Term t) where
   zipMatch (App l1 r1) (App l2 r2) = Just (App (Right (l1,l2)) (Right (r1,r2)))
   zipMatch _ _ = Nothing
 
+{-
+Concrete BindingMonad instance for computations over terms
+-}
 type BspFailure =  UFailure (Term String) IntVar
 type FallibleBindingMonad = ExceptT BspFailure (IntBindingT (Term String) Identity)
 
@@ -100,7 +103,7 @@ nubByTerms [] = return []
 nubByTerms (t:ts) = fmap (t:) $ (nubByTerms ts) >>= filterM (lift . fmap not . equals t)
 
 {-
-elemByTerms tests if a term is an element of a list of terms
+elemByTerms' tests if a term is an element of a list of terms.
 -}
 elemByTerms' :: UTerm (Term String) IntVar -> [UTerm (Term String) IntVar] -> Bool
 elemByTerms' _ [] = False
