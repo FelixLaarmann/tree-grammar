@@ -31,7 +31,10 @@ executable tree-grammar
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
-    other-modules:    Tree
+    other-modules:    Term,
+                      RS,
+                      ADC,
+                      Examples
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
