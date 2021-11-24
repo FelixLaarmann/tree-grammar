@@ -28,7 +28,7 @@ data Transition q t = Transition
   { symbol :: t
   , fromState :: Maybe (q, q)
   , target :: q
-  , dConstraint :: Bool
+  , dConstraint :: Bool --better [[(pos, pos)]] because this is a formula (conjunction of disjunctions of disequalities)
   } deriving Show
 
 data ADC q t = ADC
@@ -64,7 +64,7 @@ q0withoutAOR r = do
   nubbed <- nubByTerms $ (lin >>= strictSubTerms) ++ (nlin >>= strictSubTerms)
   let modRenaming = filter noUVar nubbed
   x <- lift freeVar
-  return $ (UVar x) : modRenaming where
+  return $ (UVar x) : modRenaming where --modulo renaming means that each variable in a set of terms has to be distinct.
     noUVar (UVar _) = False
     noUVar _ = True
 
@@ -81,11 +81,11 @@ mgu :: (BindingMonad (Term t) v m, Fallible (Term t) v e, MonadTrans em, MonadEr
        [UTerm (Term t) v] -> em m (UTerm (Term t) v)
 mgu ([]) = error "mgu of empty list"
 mgu (t:[]) = return t
-mgu (t1:t2:ts) = do {
-  u1 <- unify t1 t2;
-  u2 <- mgu (t2:ts);
-  unify u1 u2
-  }
+mgu (t1:t2:ts) = do
+  u1 <- unify t1 t2
+  u2 <- mgu (t2:ts)
+  u <- unify u1 u2
+  applyBindings u
 
 {-
 mguSubsets computes the powerset modulo unification from a set/list of terms
@@ -94,7 +94,7 @@ with the mgu to represent each subset
 mguSubsets :: (BindingMonad (Term t) v m, Fallible (Term t) v e, MonadTrans em,
                MonadError e (em m)) =>
                [UTerm (Term t) v] -> [em m (UTerm (Term t) v)]
-mguSubsets ts = map ((>>= applyBindings) . mgu) $ filter (not . null) $ subsequences ts
+mguSubsets ts = map mgu $ filter (not . null) $ subsequences ts
 
 
 mguSubsets' :: [UTerm (Term String) IntVar] -> [UTerm (Term String) IntVar]
@@ -132,23 +132,26 @@ deltaR' rs qr = tops ++ nullaryConstraints ++ binaryConstraints where
     s <- nullarySymbols
     case (evalFBM $ mgu $
           instanceOfSome (UTerm $ Symbol s) q0without) of
-      --here is a problem, because there is a free variable x in q0without and therefor each term is trivially an instance of x.
       Right u -> do
         guard (elemByTerms' u qr)
         l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 rs
-        guard $ isRight $ evalFBM $ unify u l
-        let xs = vars l
+        --l has to be a pair of the prelinearized and the linearized terms
+        guard $ isRight $ evalFBM $ unify u l --here the linearized one has to be used
+        let xs = vars l --here the prelinearized
         (x, p1) <- xs
         case (lookup x $ delete (x,p1) xs) of
+          --look up all positions, if there are for example 3 or more positions of x, all pairs p1 /= p2 have to be checked.
           Just p2 -> return $ Transition s Nothing (Q $ u) (p1 /= p2)
           Nothing -> mzero
+{-
+Instead of going through (vars l) and building the needed formula "by going through", one can unify the linearized and prelinearized l (from l2) and check the map for multiple occurences of a variable of the prelinearized terms, build the product, compute the positions and build the formula.
+-}
       Left _ -> mzero
   binaryConstraints = do
     p <- fromStates
     s <- binarySymbols
     case (evalFBM $ mgu $
           instanceOfSome (UTerm $ App (UTerm $ App (UTerm $ Symbol s) (fst p)) (snd p)) q0without) of
-      --here is a problem, because there is a free variable x in q0without and therefor each term is trivially an instance of x.
       Right u -> do
         guard (elemByTerms' u qr)
         l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 rs
@@ -230,14 +233,19 @@ binarySymbols = map fst $ filter ((== 2) . snd) $ symbolsOf exampleRS
 
 nullaryConstraints = do
     s <- nullarySymbols
-    return $ instanceOfSome (UTerm $ Symbol s) q0without
-    {-
     case (evalFBM $ mgu $
           instanceOfSome (UTerm $ Symbol s) q0without) of
       Right u -> do
         guard (elemByTerms' u qr)
-        return u
--}
+        l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 exampleRS
+        guard $ isRight $ evalFBM $ unify u l
+        let xs = vars l
+        (x, p1) <- xs
+        return (x, p1)
+        --case (lookup x $ delete (x,p1) xs) of
+        --  Just p2 -> return $ Transition s Nothing (Q $ u) (p1 /= p2)
+        --  Nothing -> mzero
+      Left _ -> mzero
 
 binaryConstraints = do
     p <- fromStates
@@ -250,3 +258,7 @@ binaryConstraints = do
         guard (elemByTerms' u qr)
         return u
 -}
+
+bspT = UVar $ IntVar 0
+bspT' = UTerm $ App (UTerm $ Symbol "f") (UVar $ IntVar 1)
+bspT'' = UTerm $ App (UTerm $ Symbol "f") (UTerm $ App  (UTerm $ Symbol "g") (UVar $ IntVar 2))
