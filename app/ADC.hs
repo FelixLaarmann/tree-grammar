@@ -212,12 +212,12 @@ productADC a1 a2 = ADC {
           Just (q21, q22) -> return $
             Transition s (Just ((q11, q21), (q12, q22)))
               (target t1, target t2)
-              [] --(dConstraint t1 && dConstraint t2)
+              (dConstraint t1 ++ dConstraint t2)
           Nothing -> mzero
         Nothing -> do
           guard $ isNothing $ fromState t2
           return $
-            Transition s Nothing (target t1, target t2) [] --(dConstraint t1 && dConstraint t2)
+            Transition s Nothing (target t1, target t2) (dConstraint t1 ++ dConstraint t2)
                        }
 
 
