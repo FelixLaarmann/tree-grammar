@@ -86,11 +86,13 @@ strictSubTerms :: UTerm (Term t) v -> [UTerm (Term t) v]
 strictSubTerms (UVar x) = []
 strictSubTerms t = arguments t >>= subTerms
 
+
+type Pos = [Int] 
 {-
 vars returns all variable of a term together with their position.
 If a variable occurs in multiple positions, it occurs multiple times in the result.
 -}
-vars :: UTerm (Term t) v -> [(v, [Int])]
+vars :: UTerm (Term t) v -> [(v, Pos)]
 vars (UVar x) = [(x, [])]
 vars (UTerm (Symbol _)) = []
 vars t = vars' $ zip (arguments t) [1..] where

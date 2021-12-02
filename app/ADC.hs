@@ -24,11 +24,13 @@ Finite Tree Automata with disequality constraints (ADC) as triples
 
 For CLS only nullary or binary domains of transitions are possible.
 -}
+
 data Transition q t = Transition
   { symbol :: t
   , fromState :: Maybe (q, q)
   , target :: q
-  , dConstraint :: Bool --better [[(pos, pos)]] because this is a formula (conjunction of disjunctions of disequalities)
+  , dConstraint :: [[(Pos, Pos)]]--Bool --better [[(pos, pos)]] because this is a formula (conjunction of disjunctions of disequalities)
+  -- Top is []
   } deriving Show
 
 data ADC q t = ADC
@@ -124,10 +126,10 @@ deltaR' rs qr = tops ++ nullaryConstraints ++ binaryConstraints where
   fromStates = [(a,b) | a <- qr, b <- qr]
   fromStatesAOR = [(Q a, AcceptOnlyReducible) | a <- qr] ++ [(AcceptOnlyReducible, Q a) | a <- qr]
   tops =
-    [Transition s (Just p) AcceptOnlyReducible True | p <- fromStatesAOR, s <- binarySymbols] ++
-    [Transition s (Just (Q $ fst p, Q $ snd p)) AcceptOnlyReducible True | p <- fromStates, s <- binarySymbols,
+    [Transition s (Just p) AcceptOnlyReducible [] | p <- fromStatesAOR, s <- binarySymbols] ++
+    [Transition s (Just (Q $ fst p, Q $ snd p)) AcceptOnlyReducible [] | p <- fromStates, s <- binarySymbols,
      not $ null $ instanceOfSome (UTerm $ App (UTerm $ App (UTerm $ Symbol s) (fst p)) (snd p)) l1s] ++
-    [Transition s Nothing AcceptOnlyReducible True | s <- nullarySymbols,
+    [Transition s Nothing AcceptOnlyReducible [] | s <- nullarySymbols,
      not $ null $ instanceOfSome (UTerm $ Symbol s) l1s]
   q0without = either (\_ -> []) (\x -> x) $ evalFBM $ q0withoutAOR rs
   nullaryConstraints = do
@@ -136,17 +138,19 @@ deltaR' rs qr = tops ++ nullaryConstraints ++ binaryConstraints where
           instanceOfSome (UTerm $ Symbol s) q0without) of
       Right u -> do
         guard (elemByTerms' u qr)
-        l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 rs
-        --l is a pair of the prelinearized and the linearized terms
-        guard $ isRight $ evalFBM $ unify u $ snd l --here the linearized one has to be used
-        let xs = vars $ fst l --here the prelinearized
-        (x, p1) <- xs
-        case (lookup x $ delete (x,p1) xs) of
-          --look up all positions, if there are for example 3 or more positions of x, all pairs p1 /= p2 have to be checked.
-          Just p2 -> return $ Transition s Nothing (Q $ u) (p1 /= p2)
-          Nothing -> mzero
+        return $ Transition s Nothing (Q u) form where
+          form = do
+            l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 rs
+            guard $ isRight $ evalFBM $ unify u $ snd l
+            let xs = vars $ fst l
+            return $ do
+              (x, p1) <- xs
+              (x', p2) <- filter (\p -> x == fst p) $ delete (x,p1) xs
+              return (p1,p2)
 {-
 Instead of going through (vars l) and building the needed formula "by going through", one can unify the linearized and prelinearized l (from l2) and check the map for multiple occurences of a variable of the prelinearized terms, build the product, compute the positions and build the formula.
+
+This won't work, because the map is not accessible.
 -}
       Left _ -> mzero
   binaryConstraints = do
@@ -156,13 +160,17 @@ Instead of going through (vars l) and building the needed formula "by going thro
           instanceOfSome (UTerm $ App (UTerm $ App (UTerm $ Symbol s) (fst p)) (snd p)) q0without) of
       Right u -> do
         guard (elemByTerms' u qr)
-        l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 rs
-        guard $ isRight $ evalFBM $ unify u $ snd l
-        let xs = vars $ fst l
-        (x, p1) <- xs
-        case (lookup x $ delete (x,p1) xs) of
-          Just p2 -> return $ Transition s (Just (Q $ fst p, Q $ snd p)) (Q $ u) (p1 /= p2)
-          Nothing -> mzero
+        return $ Transition s (Just (Q $ fst p, Q $ snd p)) (Q $ u) form where
+          form = do
+            l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 rs
+            --l is a pair of the prelinearized and the linearized terms
+            guard $ isRight $ evalFBM $ unify u $ snd l --here the linearized one has to be used
+            let xs = vars $ fst l --here the prelinearized
+            return $ do
+              --look up all positions, if there are for example 3 or more positions of x, all pairs p1 /= p2 have to be checked.
+              (x, p1) <- xs
+              (x', p2) <- filter (\p -> x == fst p) $ delete (x,p1) xs
+              return (p1,p2)
       Left _ -> mzero
 
 {-
@@ -204,12 +212,12 @@ productADC a1 a2 = ADC {
           Just (q21, q22) -> return $
             Transition s (Just ((q11, q21), (q12, q22)))
               (target t1, target t2)
-              (dConstraint t1 && dConstraint t2)
+              [] --(dConstraint t1 && dConstraint t2)
           Nothing -> mzero
         Nothing -> do
           guard $ isNothing $ fromState t2
           return $
-            Transition s Nothing (target t1, target t2) (dConstraint t1 && dConstraint t2)
+            Transition s Nothing (target t1, target t2) [] --(dConstraint t1 && dConstraint t2)
                        }
 
 
@@ -219,6 +227,8 @@ There is a problem with deltaR', because nullaryConstraints and binaryConstraint
 
 Usually exampleRS is part of app/Examples.hs
 -}
+
+{-
 exampleRS :: RS String IntVar
 exampleRS = [(UTerm $ App (UTerm (App (UTerm $ Symbol "f") (UVar $ IntVar 0))) (UVar $ IntVar 0),
               UTerm $ Symbol "a"),
@@ -233,20 +243,23 @@ instanceOfSome t ls = filter (\x -> either (\_ -> False) (\x -> x) $ evalFBM $ (
 
 binarySymbols = map fst $ filter ((== 2) . snd) $ symbolsOf exampleRS
 
+
+
 nullaryConstraints = do
     s <- nullarySymbols
     case (evalFBM $ mgu $
           instanceOfSome (UTerm $ Symbol s) q0without) of
       Right u -> do
         guard (elemByTerms' u qr)
-        l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 exampleRS
-        guard $ isRight $ evalFBM $ unify u $ snd l
-        let xs = vars $ fst l
-        (x, p1) <- xs
-        return (x, p1)
-        --case (lookup x $ delete (x,p1) xs) of
-        --  Just p2 -> return $ Transition s Nothing (Q $ u) (p1 /= p2)
-        --  Nothing -> mzero
+        return $ Transition s Nothing (Q u) form where
+          form = do
+            l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 exampleRS
+            guard $ isRight $ evalFBM $ unify u $ snd l
+            let xs = vars $ fst l
+            return $ do
+              (x, p1) <- xs
+              (y, p2) <- filter (\p -> x == fst p) $ delete (x,p1) xs
+              return (p1,p2)
       Left _ -> mzero
 
 {-
@@ -256,14 +269,20 @@ Instead of going through (vars l) and building the needed formula "by going thro
 binaryConstraints = do
     p <- fromStates
     s <- binarySymbols
-    return $ ((UTerm $ App (UTerm $ App (UTerm $ Symbol s) (fst p)) (snd p)), instanceOfSome (UTerm $ App (UTerm $ App (UTerm $ Symbol s) (fst p)) (snd p)) q0without)
-    {-
     case (evalFBM $ mgu $
           instanceOfSome (UTerm $ App (UTerm $ App (UTerm $ Symbol s) (fst p)) (snd p)) q0without) of
       Right u -> do
         guard (elemByTerms' u qr)
-        return u
--}
+        return $ Transition s (Just (Q $ fst p, Q $ snd p)) (Q $ u) form where
+          form = do
+            l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 exampleRS
+            guard $ isRight $ evalFBM $ unify u $ snd l
+            let xs = vars $ fst l
+            return $ do
+              (x, p1) <- xs
+              (y, p2) <- filter (\p -> x == fst p) $ delete (x,p1) xs
+              return (p1,p2)
+      Left _ -> mzero
 
 bspT = UVar $ IntVar 0
 bspT' = UTerm $ App (UTerm $ Symbol "f") (UVar $ IntVar 1)
@@ -271,4 +290,4 @@ bspT'' = UTerm $ App (UTerm $ Symbol "f") (UTerm $ App  (UTerm $ Symbol "g") (UV
 bspT''' = UTerm $ App (UTerm $ App (UTerm $ Symbol "f") (UTerm $ App (UTerm $ App (UTerm $ Symbol "g") (UVar $ IntVar 0)) (UTerm $ Symbol "a"))) (UTerm $ App (UTerm $ App (UTerm $ Symbol "g") (UTerm $ Symbol "b")) (UVar $ IntVar 1))
 lBspT = UTerm $ App (UTerm (App (UTerm $ Symbol "f") (UVar $ IntVar 1))) (UVar $ IntVar 2)
 nlBspT = UTerm $ App (UTerm (App (UTerm $ Symbol "f") (UVar $ IntVar 0))) (UVar $ IntVar 0)
-
+-}
