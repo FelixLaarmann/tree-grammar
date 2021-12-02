@@ -60,9 +60,11 @@ q0withoutAOR :: (BindingMonad (Term t) v m, Fallible (Term t) v e, MonadTrans em
                  RS t v -> em m [UTerm (Term t) v]
 q0withoutAOR r = do
   lin <- l1 r
-  nlin <- l2 r
+  nlin' <- l2 r
+  let nlin = map snd nlin'
   nubbed <- nubByTerms $ (lin >>= strictSubTerms) ++ (nlin >>= strictSubTerms)
-  let modRenaming = filter noUVar nubbed
+  --let modRenaming = filter noUVar nubbed
+  modRenaming <- mapM freshen $ filter noUVar nubbed
   x <- lift freeVar
   return $ (UVar x) : modRenaming where --modulo renaming means that each variable in a set of terms has to be distinct.
     noUVar (UVar _) = False
@@ -135,9 +137,9 @@ deltaR' rs qr = tops ++ nullaryConstraints ++ binaryConstraints where
       Right u -> do
         guard (elemByTerms' u qr)
         l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 rs
-        --l has to be a pair of the prelinearized and the linearized terms
-        guard $ isRight $ evalFBM $ unify u l --here the linearized one has to be used
-        let xs = vars l --here the prelinearized
+        --l is a pair of the prelinearized and the linearized terms
+        guard $ isRight $ evalFBM $ unify u $ snd l --here the linearized one has to be used
+        let xs = vars $ fst l --here the prelinearized
         (x, p1) <- xs
         case (lookup x $ delete (x,p1) xs) of
           --look up all positions, if there are for example 3 or more positions of x, all pairs p1 /= p2 have to be checked.
@@ -155,8 +157,8 @@ Instead of going through (vars l) and building the needed formula "by going thro
       Right u -> do
         guard (elemByTerms' u qr)
         l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 rs
-        guard $ isRight $ evalFBM $ unify u l
-        let xs = vars l
+        guard $ isRight $ evalFBM $ unify u $ snd l
+        let xs = vars $ fst l
         (x, p1) <- xs
         case (lookup x $ delete (x,p1) xs) of
           Just p2 -> return $ Transition s (Just (Q $ fst p, Q $ snd p)) (Q $ u) (p1 /= p2)
@@ -238,14 +240,18 @@ nullaryConstraints = do
       Right u -> do
         guard (elemByTerms' u qr)
         l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 exampleRS
-        guard $ isRight $ evalFBM $ unify u l
-        let xs = vars l
+        guard $ isRight $ evalFBM $ unify u $ snd l
+        let xs = vars $ fst l
         (x, p1) <- xs
         return (x, p1)
         --case (lookup x $ delete (x,p1) xs) of
         --  Just p2 -> return $ Transition s Nothing (Q $ u) (p1 /= p2)
         --  Nothing -> mzero
       Left _ -> mzero
+
+{-
+Instead of going through (vars l) and building the needed formula "by going through", one can unify the linearized and prelinearized l (from l2) and check the map for multiple occurences of a variable of the prelinearized terms, build the product, compute the positions and build the formula.
+-}
 
 binaryConstraints = do
     p <- fromStates
@@ -262,3 +268,7 @@ binaryConstraints = do
 bspT = UVar $ IntVar 0
 bspT' = UTerm $ App (UTerm $ Symbol "f") (UVar $ IntVar 1)
 bspT'' = UTerm $ App (UTerm $ Symbol "f") (UTerm $ App  (UTerm $ Symbol "g") (UVar $ IntVar 2))
+bspT''' = UTerm $ App (UTerm $ App (UTerm $ Symbol "f") (UTerm $ App (UTerm $ App (UTerm $ Symbol "g") (UVar $ IntVar 0)) (UTerm $ Symbol "a"))) (UTerm $ App (UTerm $ App (UTerm $ Symbol "g") (UTerm $ Symbol "b")) (UVar $ IntVar 1))
+lBspT = UTerm $ App (UTerm (App (UTerm $ Symbol "f") (UVar $ IntVar 1))) (UVar $ IntVar 2)
+nlBspT = UTerm $ App (UTerm (App (UTerm $ Symbol "f") (UVar $ IntVar 0))) (UVar $ IntVar 0)
+

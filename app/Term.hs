@@ -37,6 +37,9 @@ runFBM = runIdentity . runIntBindingT . runExceptT
 evalFBM :: FallibleBindingMonad a -> Either BspFailure a
 evalFBM = runIdentity . evalIntBindingT . runExceptT
 
+execFBM :: FallibleBindingMonad a -> IntBindingState (Term String)
+execFBM = runIdentity . execIntBindingT . runExceptT
+
 {-
 linearize returns the linearization of the input term
 -}

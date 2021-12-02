@@ -54,7 +54,15 @@ l1 = return . filter (isLinear) . l
 
 {-
 l2 is the linearization of the non-linear terms in l, constructed directly from a rewriting system
+l2 returns pairs (non-linearized terms, linearized term), such that we have the non-linearized terms
+available for the computation of the transition relation of the ADC.
 -}
 l2 :: (BindingMonad (Term t) v m, Fallible (Term t) v e, MonadTrans em, MonadError e (em m)) =>
-       RS t v -> em m [UTerm (Term t) v]
-l2 x = (return $ filter (not . isLinear) $ l x) >>= nubByTerms >>= mapM linearize
+       RS t v -> em m [(UTerm (Term t) v, UTerm (Term t) v)] --[UTerm (Term t) v]
+l2 x = do --(return $ filter (not . isLinear) $ l x) >>= nubByTerms >>= mapM linearize
+  nlins <- (return $ filter (not . isLinear) $ l x) >>= nubByTerms
+  lins <- return nlins >>=  mapM linearize
+  return $ zip nlins lins
+  
+
+
