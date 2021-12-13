@@ -5,7 +5,9 @@ import ADC
 import Examples
 
 main :: IO ()
-main = prettyPrintADC $ constructNfADC exampleRS
+main = do
+  --prettyPrintADC $ constructNfADC exampleRS
+  prettyPrintADC $ constructNfADC testRS
 
 {-
 Result of main:

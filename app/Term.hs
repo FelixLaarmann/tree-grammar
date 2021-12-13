@@ -100,6 +100,16 @@ vars t = vars' $ zip (arguments t) [1..] where
   vars' ((t,n) : ps) = (map (\(v,ns) -> (v, n:ns)) (vars t)) ++ vars' ps
 
 {-
+pos returns the list of all positions of a Term
+-}
+pos :: UTerm (Term t) v -> [Pos]
+pos (UVar _) = [[]]
+pos (UTerm (Symbol _)) = [[]]
+pos t = pos' $ zip (arguments t) [1..] where
+  pos' [] = []
+  pos' ((t,n) : ps) = (map (\ns -> n:ns) (pos t)) ++ pos' ps
+
+{-
 nubByTerms removes duplicates from a list of terms and returns the result list in a BindingMonad
 -}
 nubByTerms :: (BindingMonad (Term t) v m, Fallible (Term t) v e, MonadTrans em, MonadError e (em m)) =>
