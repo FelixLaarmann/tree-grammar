@@ -2,6 +2,7 @@ module Main where
 import Term
 import RS
 import ADC
+import Grammar
 import Examples
 
 main :: IO ()

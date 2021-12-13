@@ -132,7 +132,7 @@ constructADC g = ADC n [s] (map transition r) where
 -}
 {-
 Examples for testing
--}
+
 
 {-
 normalized regular tree grammar
@@ -158,4 +158,5 @@ natListGrammar' = (0, [0,1], ["nil", "cons", "0", "s"], rules) where
     (1, Terminal "s" [NonTerminal 1]),
     (1, NonTerminal 1)
           ]
+-}
 
