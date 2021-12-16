@@ -14,6 +14,7 @@ import Control.Monad.Identity
 import Control.Monad.Trans
 import Data.List
 import Data.Either
+import Prelude hiding (pi)
 
 import Term
 import RS
@@ -28,7 +29,7 @@ For CLS only nullary or binary domains of transitions are possible.
 
 data Transition q t = Transition
   { symbol :: t
-  , fromState :: Maybe (q, q)
+  , fromState :: [q]
   , target :: q
   , dConstraint :: [[(Pos, Pos)]]--Bool --better [[(pos, pos)]] because this is a formula (conjunction of disjunctions of disequalities)
   -- Top is []
@@ -40,6 +41,7 @@ data ADC q t = ADC
   , transitions :: [Transition q t]
   } deriving Show
 
+
 prettyPrintADC :: (Show t, Show v) => ADC t v -> IO()
 prettyPrintADC adc = do
   putStrLn "\n##### States #####\n"
@@ -49,6 +51,39 @@ prettyPrintADC adc = do
   putStrLn "\n\n\n##### Transitions #####\n"
   mapM_ print $ transitions adc
 
+
+{-
+Falls man das mal braucht...
+-}
+nAryProd :: Int -> [a] -> [[a]]
+nAryProd n = sequence . (take n) . repeat
+
+{-
+modSym computes a relation modulo symmetry
+-}
+modSym :: Eq a => [(a,a)] -> [(a,a)]
+modSym [] = []
+modSym ((a,b):ls) = (a,b) : (modSym $ filter (/= (b,a)) ls)
+
+{-
+atoms returns the list of all distinct disequalities from the transitions of an ADC.
+-}
+atoms :: ADC q t -> [(Pos, Pos)]
+atoms = nub . join . join . (map dConstraint) . transitions
+
+{-
+c(ADC) computes the number of all distinct triples (β,π,π′) such that β is a prefix of
+π′and π̸=π′ or π′̸=π is an atom occurring in a constraint of transition rules of ADC.
+-}
+c :: ADC q t -> Int
+c adc = length [(beta, pi, pi') | (pi, pi') <- pis, beta <- inits pi', beta `isPrefixOf` pi'] where
+  pis = modSym $ atoms adc
+
+{-
+pi(ADC) is the maximum length of π in a constraint π̸=π′ or π′̸=π in ADC.
+-}
+pi :: ADC q t -> Int
+pi = maximum . (map (\(l,r) -> max (length l) (length r))) . atoms
 
 {-
 (q0 r) is the list of all strict subterms of terms in the union of l1 and l2 (modulo renaming of variables)
@@ -112,7 +147,7 @@ mguSubsets' ts = fromErrorList $ map evalFBM $ either (\_ -> []) (\x -> x) $ eva
 {-
 deltaR' computes the transitions, when constructing an adc from a rewriting system rs.
 For simplicity deltaR' is abstract over the final states of the adc to construct from rs.
--}
+
 deltaR' :: RS String IntVar -> [UTerm (Term String) IntVar]
   -> [Transition (Q0 String IntVar) String]
 deltaR' rs qr = tops ++ nullaryConstraints ++ binaryConstraints where 
@@ -173,6 +208,53 @@ This won't work, because the map is not accessible.
               (x', p2) <- filter (\p -> x == fst p) $ delete (x,p1) xs
               return (p1,p2)
       Left _ -> mzero
+-}
+
+{-
+deltaR' computes the transitions for n-ary symbols.
+-}
+deltaR' :: RS String IntVar -> [UTerm (Term String) IntVar]
+  -> [Transition (Q0 String IntVar) String]
+deltaR' rs qr = tops ++ constraints where
+{-
+f(q_u_1,...,q_u_n)-c−> q_u where q_u_1,...,q_u_n, q_u ∈ Qr and:
+-}
+  symbols = symbolsOf rs
+  l1s = (either (\_ -> []) (\x -> x) $ evalFBM $ l1 rs)
+  nArySymbols = nub [(map fst $ filter ((== n) . snd) symbols, n) | (f, n) <- symbols]
+  instanceOfSome t ls = filter (\x -> either (\_ -> False) (\x -> x) $ evalFBM $ (x <:= t)) ls
+  fromStates n = sequence $ (take n) $ repeat qr
+  fromStatesAOR n = sequence . (take n) . repeat $ AcceptOnlyReducible : (map Q qr)
+  isQr AcceptOnlyReducible = True
+  isQr _ = False
+  tops = [Transition s args AcceptOnlyReducible []  |
+          (ls, n) <- nArySymbols, s <- ls, args <- fromStatesAOR n, or $ map isQr args] ++
+         --if (at least???) one of the q_u_i’s is q_r
+         [Transition s (map Q args) AcceptOnlyReducible []  |
+          (ls, n) <- nArySymbols, s <- ls, args <- fromStates n,
+          not $ null $ instanceOfSome (treeToTerm s args) l1s]
+         --or f(u_1,...,u_n) is an instance of some s∈ L1, then q_u=q_r and c=⊤
+  q0without = either (\_ -> []) (\x -> x) $ evalFBM $ q0withoutAOR rs
+  constraints = do
+    (ls, n) <- nArySymbols
+    s <- ls
+    args <- fromStates n
+    case (evalFBM $ mgu $
+          instanceOfSome (treeToTerm s args) q0without) of
+      Right u -> do
+        guard (elemByTerms' u qr)
+        return $ Transition s (map Q args) (Q $ u) form where
+          form = do
+            l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 rs
+            --l is a pair of the prelinearized and the linearized terms
+            guard $ isRight $ evalFBM $ unify u $ snd l --here the linearized one has to be used
+            let xs = vars $ fst l --here the prelinearized
+            return $ do
+              --look up all positions, if there are for example 3 or more positions of x, all pairs p1 /= p2 have to be checked.
+              (x, p1) <- xs
+              (x', p2) <- filter (\p -> x == fst p) $ delete (x,p1) xs
+              return (p1,p2)
+      Left _ -> mzero
 
 {-
 constructNfADC constructs an automata with disequality constraints (ADC) from a given
@@ -201,8 +283,8 @@ constructADC :: (Eq t, Eq nt,  Newable nt) => TreeGrammar t nt -> ADC nt t
 constructADC g = ADC n [s] (map transition r) where
   (s, n, _, r) = normalize g
   transition (a, Terminal f args) = Transition f (from args) a [] --partial function, because g is normalized
-  from [] = Nothing
-  from (NonTerminal a1 : NonTerminal a2 : qs) = Just (a1, a2) --partial function, because g is normalized
+  from [] = []
+  from (NonTerminal a : qs) = a : (from qs) --partial function, because g is normalized
 
 {-
 productADC computes the product ADC for two given ADC's.
@@ -221,17 +303,10 @@ productADC a1 a2 = ADC {
       t2 <- transitions a2
       let s =  symbol t1
       guard (s == symbol t2)
-      case fromState t1 of
-        Just (q11, q12) -> case fromState t2 of
-          Just (q21, q22) -> return $
-            Transition s (Just ((q11, q21), (q12, q22)))
-              (target t1, target t2)
-              (dConstraint t1 ++ dConstraint t2)
-          Nothing -> mzero
-        Nothing -> do
-          guard $ isNothing $ fromState t2
-          return $
-            Transition s Nothing (target t1, target t2) (dConstraint t1 ++ dConstraint t2)
+      let args1 = fromState t1
+      let args2 = fromState t2
+      guard (length args1 == length args2)
+      return $ Transition s (zip args1 args2) (target t1, target t2) (dConstraint t1 ++ dConstraint t2)
                        }
 
 {-
@@ -256,10 +331,12 @@ intersectSymbols rs gr = intersect (terminalsWithArity gr) (symbolsOf rs)
 
 heightADC :: Eq t => Integer -> [(t, Int)] -> ADC Integer t
 heightADC n ts = ADC (-1 : [0..n]) [n] trans where
-  trans = map (\a -> Transition a Nothing 0 []) nullaryTs ++
-    [Transition f (Just (q1, q2)) (min (1 + max q1 q2) n) [] | f <- binaryTs, q1 <- [0..n], q2 <- [0..n]]
+  trans = map (\a -> Transition a [] 0 []) nullaryTs ++
+    [Transition f args (min (1 + maximum args) n) [] |
+     (ls, n') <- nArySymbols, f <- ls, args <- nAryProd n' [0..n]]
   nullaryTs = map fst $ filter ((== 0) . snd) ts
-  binaryTs = map fst $ filter ((== 2) . snd) ts
+  nAryProd n = sequence . (take n) . repeat
+  nArySymbols = nub [(map fst $ filter ((== n') . snd) ts, n') | (f, n') <- ts, n' > 0]
 
 {-
 [CJ03] defines the size of a term as the cardinal
@@ -292,11 +369,14 @@ where e = 2,718... is Euler's Number.
 -}
 
 eIfIntersectionFin :: (Eq nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> ADC ((nt, (Q0 String IntVar)), Integer) String
-eIfIntersectionFin g r = productADC (productADC (constructADC g) (constructNfADC r)) (heightADC n f) where
+eIfIntersectionFin g r = productADC a (heightADC n f) where
+  a = productADC (constructADC g) (constructNfADC r)
   f = intersectSymbols r g
-  rs = sizeR r
+  --rs = sizeR r
   fac i = product [1..i] --http://www.willamette.edu/~fruehr/haskell/evolution.html
-  n = div (371828182845 * (sizeG g) * (2^(rs^3 + rs + 2)) * (fac $ rs^3) * rs) 100000000000
+  n = div (371828182845 * (toInteger $ length $ states a) *
+           (2^(toInteger $ c a)) * (fac $ toInteger $ c a) * (toInteger $ pi a)) 100000000000
+  --n = div (371828182845 * (sizeG g) * (2^(rs^3 + rs + 2)) * (fac $ rs^3) * rs) 100000000000
 
 {-
 Everything below is for Debugging...
@@ -310,7 +390,22 @@ exampleRS :: RS String IntVar
 exampleRS = [(UTerm $ App (UTerm (App (UTerm $ Symbol "cons") (UVar $ IntVar 0))) (UVar $ IntVar 0),
               UTerm $ Symbol "a"),
              (UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UVar $ IntVar 0)) (UTerm $ Symbol "a"))) (UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UTerm $ Symbol "b")) (UVar $ IntVar 1)),
-              UTerm $ Symbol "c")]
+              UTerm $ Symbol "c")--,
+              --((UTerm $ App (UTerm $ App (UTerm $ App (UTerm $ Symbol "test") (UTerm $ Symbol "b")) (UVar $ IntVar 1)) (UTerm $ Symbol "a")),
+              --UTerm $ Symbol "c")
+            ]
+
+natListGrammar :: TreeGrammar String Int
+natListGrammar = (0, [0,1], ["nil", "cons", "0", "s"], rules) where
+  rules = [
+    (0, Terminal "nil" []),
+    (0, Terminal "cons" [NonTerminal 1, NonTerminal 0]),
+    (0, Terminal "++" [NonTerminal 0, NonTerminal 0]),
+    (1, Terminal "0" []),
+    (1, Terminal "s" [NonTerminal 1]),
+    (1, Terminal "mult" [NonTerminal 1, NonTerminal 1])
+          ]
+
 {-
 q0without = either (\_ -> []) (\x -> x) $ evalFBM $ q0withoutAOR exampleRS
 nullarySymbols = map fst $ filter ((== 0) . snd) $ symbolsOf exampleRS

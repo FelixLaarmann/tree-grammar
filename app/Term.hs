@@ -79,6 +79,9 @@ subTerms (UVar x) = [UVar x]
 subTerms (UTerm (Symbol x)) = [UTerm $ Symbol x]
 subTerms t = (t:) $ (arguments t >>= subTerms)
 
+treeToTerm :: t -> [UTerm (Term t) v] -> UTerm (Term t) v
+treeToTerm f args = foldl (\t t' -> UTerm $ App t t') (UTerm (Symbol f)) args
+
 {-
 strictSubTerms computes the list of all strict subterms of a given term
 -}
