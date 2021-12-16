@@ -79,6 +79,18 @@ subTerms (UVar x) = [UVar x]
 subTerms (UTerm (Symbol x)) = [UTerm $ Symbol x]
 subTerms t = (t:) $ (arguments t >>= subTerms)
 
+findSymbols :: Eq t => UTerm (Term t) v -> [(t, Int)]
+findSymbols (UVar _) = []
+findSymbols (UTerm (Symbol f)) = [(f, 0)]
+findSymbols (UTerm (App l r)) = nub $ case symbol l of
+    Just s -> let args = arguments (UTerm (App l r)) in [(s, length $ args)] ++ (args >>= findSymbols)
+    Nothing -> []
+    where
+  symbol (UVar _) = Nothing
+  symbol (UTerm (Symbol f)) = Just f
+  symbol (UTerm (App (UTerm (Symbol f)) r)) = Just f
+  symbol (UTerm (App l r)) = symbol l
+
 treeToTerm :: t -> [UTerm (Term t) v] -> UTerm (Term t) v
 treeToTerm f args = foldl (\t t' -> UTerm $ App t t') (UTerm (Symbol f)) args
 
@@ -109,8 +121,20 @@ pos :: UTerm (Term t) v -> [Pos]
 pos (UVar _) = [[]]
 pos (UTerm (Symbol _)) = [[]]
 pos t = pos' $ zip (arguments t) [1..] where
-  pos' [] = []
+  pos' [] = [[]]
   pos' ((t,n) : ps) = (map (\ns -> n:ns) (pos t)) ++ pos' ps
+
+termAtPos :: UTerm (Term t) v -> Pos -> Maybe (UTerm (Term t) v)
+termAtPos t [] = Just $ t where
+termAtPos t (n:ps) = let args = arguments t in
+  if (length args <= n) then Nothing else termAtPos ((arguments t)!!(n-1)) ps
+
+atPos :: UTerm (Term t) v -> Pos -> Maybe (UTerm (Term t) v)
+atPos t [] = Just $ leftMost t where
+  leftMost (UTerm (App l r)) = leftMost l
+  leftMost x = x
+atPos t (n:ps) = let args = arguments t in
+  if (length args <= n) then Nothing else atPos ((arguments t)!!(n-1)) ps
 
 {-
 nubByTerms removes duplicates from a list of terms and returns the result list in a BindingMonad

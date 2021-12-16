@@ -28,7 +28,7 @@ We assume that application is left-associative and therefor the "root-symbol" of
 -}
 symbolsOf :: Eq t => RS t v -> [(t, Int)]
 symbolsOf [] = []
-symbolsOf ((t, t'):ts) = nub $ findSymbols t ++ findSymbols t' ++ symbolsOf ts where
+symbolsOf ((t, t'):ts) = nub $ findSymbols t ++ findSymbols t' ++ symbolsOf ts {-where
   findSymbols (UVar _) = []
   findSymbols (UTerm (Symbol f)) = [(f, 0)]
   findSymbols (UTerm (App l r)) = case symbol l of
@@ -37,7 +37,7 @@ symbolsOf ((t, t'):ts) = nub $ findSymbols t ++ findSymbols t' ++ symbolsOf ts w
   symbol (UVar _) = Nothing
   symbol (UTerm (Symbol f)) = Just f
   symbol (UTerm (App (UTerm (Symbol f)) r)) = Just f
-  symbol (UTerm (App l r)) = symbol l
+  symbol (UTerm (App l r)) = symbol l-}
 
 {-
 l is the list of left-hand sides of a rewriting system

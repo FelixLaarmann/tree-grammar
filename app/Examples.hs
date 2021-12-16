@@ -55,6 +55,15 @@ testRS = [(UTerm $ App (UTerm (App (UTerm $ Symbol "f") (UVar $ IntVar 0))) (UVa
               UTerm $ Symbol "c")]
 
 {-
+Example for second guard in deltaR'
+-}
+nextExample :: RS String IntVar
+nextExample = [(UTerm $ App (UTerm (App (UTerm $ Symbol "f") (UVar $ IntVar 0))) (UVar $ IntVar 0),
+              UTerm $ Symbol "a"),
+             (UTerm $ App (UTerm $ App (UTerm $ Symbol "f") (UTerm $ App (UTerm $ Symbol "g") (UVar $ IntVar 0))) (UTerm $ App (UTerm $ Symbol "g") (UVar $ IntVar 0)),
+              UTerm $ Symbol "b")]
+
+{-
 normalized regular tree grammar
 -}
 natListGrammar :: TreeGrammar String Int

@@ -51,12 +51,14 @@ prettyPrintADC adc = do
   putStrLn "\n\n\n##### Transitions #####\n"
   mapM_ print $ transitions adc
 
+--weakRun :: ADC q t -> UTerm (Term t) v -> Pos -> [Transition q t]
+--weakRun adc t p | elem p (pos t) = 
 
 {-
 Falls man das mal braucht...
 -}
-nAryProd :: Int -> [a] -> [[a]]
-nAryProd n = sequence . (take n) . repeat
+--nAryProd :: Int -> [a] -> [[a]]
+--nAryProd n = sequence . (take n) . repeat
 
 {-
 modSym computes a relation modulo symmetry
@@ -64,6 +66,7 @@ modSym computes a relation modulo symmetry
 modSym :: Eq a => [(a,a)] -> [(a,a)]
 modSym [] = []
 modSym ((a,b):ls) = (a,b) : (modSym $ filter (/= (b,a)) ls)
+
 
 {-
 atoms returns the list of all distinct disequalities from the transitions of an ADC.
@@ -248,8 +251,9 @@ f(q_u_1,...,q_u_n)-c−> q_u where q_u_1,...,q_u_n, q_u ∈ Qr and:
             l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 rs
             --l is a pair of the prelinearized and the linearized terms
             guard $ isRight $ evalFBM $ unify u $ snd l --here the linearized one has to be used
+            guard $ not $ null $ instanceOfSome (treeToTerm s args) [snd l] --this guard is the result of a discussion with Lukasz and has to be added in the paper
             let xs = vars $ fst l --here the prelinearized
-            return $ do
+            return $ modSym $ do
               --look up all positions, if there are for example 3 or more positions of x, all pairs p1 /= p2 have to be checked.
               (x, p1) <- xs
               (x', p2) <- filter (\p -> x == fst p) $ delete (x,p1) xs
@@ -385,7 +389,7 @@ There is a problem with deltaR', because nullaryConstraints and binaryConstraint
 Usually exampleRS is part of app/Examples.hs
 -}
 
-
+{-
 exampleRS :: RS String IntVar
 exampleRS = [(UTerm $ App (UTerm (App (UTerm $ Symbol "cons") (UVar $ IntVar 0))) (UVar $ IntVar 0),
               UTerm $ Symbol "a"),
@@ -405,7 +409,7 @@ natListGrammar = (0, [0,1], ["nil", "cons", "0", "s"], rules) where
     (1, Terminal "s" [NonTerminal 1]),
     (1, Terminal "mult" [NonTerminal 1, NonTerminal 1])
           ]
-
+-}
 {-
 q0without = either (\_ -> []) (\x -> x) $ evalFBM $ q0withoutAOR exampleRS
 nullarySymbols = map fst $ filter ((== 0) . snd) $ symbolsOf exampleRS
