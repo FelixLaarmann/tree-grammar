@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
 
@@ -51,14 +52,75 @@ prettyPrintADC adc = do
   putStrLn "\n\n\n##### Transitions #####\n"
   mapM_ print $ transitions adc
 
---weakRun :: ADC q t -> UTerm (Term t) v -> Pos -> [Transition q t]
---weakRun adc t p | elem p (pos t) = 
-
 {-
-Falls man das mal braucht...
+A run of an ADC A on a term T is a mapping rho :: pos(T) -> transitions(A).
+An ADC can be non-deterministic, which can simply be implemented with lists
+in the codomain of rho.
+
+A run is called a weak run, if the disequality constraints are not necessarily
+satisfied.
+
+A ground term is accepted by an ADC if there is a run on this term such that rho([])
+is a transition whose target is a final state.
 -}
---nAryProd :: Int -> [a] -> [[a]]
---nAryProd n = sequence . (take n) . repeat
+
+nonDetWeakRun :: (Eq t, Eq q) => ADC q t -> UTerm (Term t) v -> Pos -> [Transition q t]
+nonDetWeakRun adc t p
+  | elem p (pos t) = do
+      Just sp <- return $ t `symbolAtPos` p
+      guard $ sp `elem` (map fst $ findSymbols t)
+      trans <- filter ((== sp) . symbol) $ transitions adc
+      case zip [1..] $ fromState trans of
+        [] -> return trans --transitions with arity 0 are valid without restrictions
+        ps -> do
+          guard $ and $ do
+            (i, qi) <- ps --for each state of the domain
+            return $ not $ null $ filter ((== qi) . target) $ nonDetWeakRun adc t $ p ++ [i]
+            --we have to check, if there is a run mapping its position to a transition with itself as target
+          return trans
+  | otherwise = []
+
+weakRun :: (Eq t, Eq q) => ADC q t -> UTerm (Term t) v -> Pos -> Maybe (Transition q t)
+weakRun adc t p = do
+  case nonDetWeakRun adc t p of
+    [] -> Nothing
+    (t:ts) -> return t
+
+nonDetRun :: (Eq q) => ADC q String -> UTerm (Term String) IntVar -> Pos -> [Transition q String]
+nonDetRun adc t p
+  | elem p (pos t) = do
+      ts <- nonDetWeakRun adc t p
+      Just tp <- return $ t `termAtPos` p
+      guard $ satisfies tp $ dConstraint ts
+      return ts
+  | otherwise = []
+
+run :: (Eq q) => ADC q String -> UTerm (Term String) IntVar -> Pos -> Maybe (Transition q String)
+run adc t p
+  | elem p (pos t) = do
+      trans <- weakRun adc t p
+      tp <- t `termAtPos` p
+      guard $ satisfies tp $ dConstraint trans
+      return trans
+  | otherwise = Nothing
+
+satisfies :: UTerm (Term String) IntVar -> [[(Pos, Pos)]] -> Bool
+satisfies t conjunction = and $ map (satisfiesDisjunction t) conjunction where
+  satisfiesDisjunction t disjunction = or $ map (satisfiesDisEq t) disjunction
+  satisfiesDisEq :: UTerm (Term String) IntVar -> (Pos, Pos) -> Bool
+  satisfiesDisEq t (p1,p2) = not $
+      case t `termAtPos` p1 of
+        Just tp1 -> case t `termAtPos` p2 of
+          Just tp2 -> runIdentity $ evalIntBindingT $ tp1 === tp2
+          Nothing -> False
+        Nothing -> False
+
+accepts :: (Eq q) => ADC q String -> UTerm (Term String) IntVar -> Bool
+accepts adc t = isJust $ do
+  trans <- run adc t []
+  guard $ target trans `elem` final adc
+  return True
+
 
 {-
 modSym computes a relation modulo symmetry
@@ -96,6 +158,11 @@ for a rewriting system r, plus two special states:
 -}
 
 data Q0 t v =  AcceptOnlyReducible | Q (UTerm (Term t) v) deriving (Show)
+
+instance Eq (Q0 String IntVar) where
+  AcceptOnlyReducible == AcceptOnlyReducible = True
+  Q t == Q t' = runIdentity $ evalIntBindingT $ t === t'
+  _ == _ = False
 
 q0withoutAOR :: (BindingMonad (Term t) v m, Fallible (Term t) v e, MonadTrans em, MonadError e (em m)) =>
                  RS t v -> em m [UTerm (Term t) v]
@@ -146,72 +213,6 @@ mguSubsets' ts = fromErrorList $ map evalFBM $ either (\_ -> []) (\x -> x) $ eva
     fromErrorList [] = []
     fromErrorList (Left e : es) = fromErrorList es
     fromErrorList (Right t : es) = t : fromErrorList es
-
-{-
-deltaR' computes the transitions, when constructing an adc from a rewriting system rs.
-For simplicity deltaR' is abstract over the final states of the adc to construct from rs.
-
-deltaR' :: RS String IntVar -> [UTerm (Term String) IntVar]
-  -> [Transition (Q0 String IntVar) String]
-deltaR' rs qr = tops ++ nullaryConstraints ++ binaryConstraints where 
-  symbols = symbolsOf rs
-  l1s = (either (\_ -> []) (\x -> x) $ evalFBM $ l1 rs)
-  nullarySymbols = map fst $ filter ((== 0) . snd) symbols
-  binarySymbols = map fst $ filter ((== 2) . snd) symbols
-  nullaryCandidates = [UTerm $ Symbol s | s <- nullarySymbols]
-  candidatesForPair p =
-    [UTerm $ App (UTerm $ App (UTerm $ Symbol s) (fst p)) (snd p) | s <- binarySymbols]
-  instanceOfSome t ls = filter (\x -> either (\_ -> False) (\x -> x) $ evalFBM $ (x <:= t)) ls
-  fromStates = [(a,b) | a <- qr, b <- qr]
-  fromStatesAOR = [(Q a, AcceptOnlyReducible) | a <- qr] ++ [(AcceptOnlyReducible, Q a) | a <- qr]
-  tops =
-    [Transition s (Just p) AcceptOnlyReducible [] | p <- fromStatesAOR, s <- binarySymbols] ++
-    [Transition s (Just (Q $ fst p, Q $ snd p)) AcceptOnlyReducible [] | p <- fromStates, s <- binarySymbols,
-     not $ null $ instanceOfSome (UTerm $ App (UTerm $ App (UTerm $ Symbol s) (fst p)) (snd p)) l1s] ++
-    [Transition s Nothing AcceptOnlyReducible [] | s <- nullarySymbols,
-     not $ null $ instanceOfSome (UTerm $ Symbol s) l1s]
-  q0without = either (\_ -> []) (\x -> x) $ evalFBM $ q0withoutAOR rs
-  nullaryConstraints = do
-    s <- nullarySymbols
-    case (evalFBM $ mgu $
-          instanceOfSome (UTerm $ Symbol s) q0without) of
-      Right u -> do
-        guard (elemByTerms' u qr)
-        return $ Transition s Nothing (Q u) form where
-          form = do
-            l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 rs
-            guard $ isRight $ evalFBM $ unify u $ snd l
-            let xs = vars $ fst l
-            return $ do
-              (x, p1) <- xs
-              (x', p2) <- filter (\p -> x == fst p) $ delete (x,p1) xs
-              return (p1,p2)
-{-
-Instead of going through (vars l) and building the needed formula "by going through", one can unify the linearized and prelinearized l (from l2) and check the map for multiple occurences of a variable of the prelinearized terms, build the product, compute the positions and build the formula.
-
-This won't work, because the map is not accessible.
--}
-      Left _ -> mzero
-  binaryConstraints = do
-    p <- fromStates
-    s <- binarySymbols
-    case (evalFBM $ mgu $
-          instanceOfSome (UTerm $ App (UTerm $ App (UTerm $ Symbol s) (fst p)) (snd p)) q0without) of
-      Right u -> do
-        guard (elemByTerms' u qr)
-        return $ Transition s (Just (Q $ fst p, Q $ snd p)) (Q $ u) form where
-          form = do
-            l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 rs
-            --l is a pair of the prelinearized and the linearized terms
-            guard $ isRight $ evalFBM $ unify u $ snd l --here the linearized one has to be used
-            let xs = vars $ fst l --here the prelinearized
-            return $ do
-              --look up all positions, if there are for example 3 or more positions of x, all pairs p1 /= p2 have to be checked.
-              (x, p1) <- xs
-              (x', p2) <- filter (\p -> x == fst p) $ delete (x,p1) xs
-              return (p1,p2)
-      Left _ -> mzero
--}
 
 {-
 deltaR' computes the transitions for n-ary symbols.
@@ -323,8 +324,6 @@ f(q_i_1,..., q_i_n) -> q_min(max(i_1,...,i_n)+1, n) for n > 0 and all i_1,...i_n
 (Obviously we assume that all symbols f \in F are given, since the tree language L(G) intersect L(RS) implies that G and RS somehow uses the same signature F.
 Otherwise the intersection would be emtpy, trivially :D)
 -}
-
---symbolsOf :: Eq t => RS t v -> [(t, Int)]
 terminalsWithArity :: Eq t => TreeGrammar t nt -> [(t, Int)]
 terminalsWithArity (_, _, _, rules) = nub $ rules >>= (arity . snd) where
   arity (Terminal t args) = (t, length args) : (args >>= arity)
@@ -409,61 +408,10 @@ natListGrammar = (0, [0,1], ["nil", "cons", "0", "s"], rules) where
     (1, Terminal "s" [NonTerminal 1]),
     (1, Terminal "mult" [NonTerminal 1, NonTerminal 1])
           ]
--}
-{-
-q0without = either (\_ -> []) (\x -> x) $ evalFBM $ q0withoutAOR exampleRS
-nullarySymbols = map fst $ filter ((== 0) . snd) $ symbolsOf exampleRS
-qr = either (\_ -> []) (\x -> x) $ evalFBM $ (q0withoutAOR exampleRS >>= nubByTerms . mguSubsets')
-fromStates = [(a,b) | a <- qr, b <- qr]
-instanceOfSome t ls = filter (\x -> either (\_ -> False) (\x -> x) $ evalFBM $ (x <:= t)) ls
-
-binarySymbols = map fst $ filter ((== 2) . snd) $ symbolsOf exampleRS
-
-
-
-nullaryConstraints = do
-    s <- nullarySymbols
-    case (evalFBM $ mgu $
-          instanceOfSome (UTerm $ Symbol s) q0without) of
-      Right u -> do
-        guard (elemByTerms' u qr)
-        return $ Transition s Nothing (Q u) form where
-          form = do
-            l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 exampleRS
-            guard $ isRight $ evalFBM $ unify u $ snd l
-            let xs = vars $ fst l
-            return $ do
-              (x, p1) <- xs
-              (y, p2) <- filter (\p -> x == fst p) $ delete (x,p1) xs
-              return (p1,p2)
-      Left _ -> mzero
 
 {-
-Instead of going through (vars l) and building the needed formula "by going through", one can unify the linearized and prelinearized l (from l2) and check the map for multiple occurences of a variable of the prelinearized terms, build the product, compute the positions and build the formula.
+This is a term, that should not be accepted by natListGrammar.
 -}
-
-binaryConstraints = do
-    p <- fromStates
-    s <- binarySymbols
-    case (evalFBM $ mgu $
-          instanceOfSome (UTerm $ App (UTerm $ App (UTerm $ Symbol s) (fst p)) (snd p)) q0without) of
-      Right u -> do
-        guard (elemByTerms' u qr)
-        return $ Transition s (Just (Q $ fst p, Q $ snd p)) (Q $ u) form where
-          form = do
-            l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 exampleRS
-            guard $ isRight $ evalFBM $ unify u $ snd l
-            let xs = vars $ fst l
-            return $ do
-              (x, p1) <- xs
-              (y, p2) <- filter (\p -> x == fst p) $ delete (x,p1) xs
-              return (p1,p2)
-      Left _ -> mzero
-
-bspT = UVar $ IntVar 0
-bspT' = UTerm $ App (UTerm $ Symbol "f") (UVar $ IntVar 1)
-bspT'' = UTerm $ App (UTerm $ Symbol "f") (UTerm $ App  (UTerm $ Symbol "g") (UVar $ IntVar 2))
-bspT''' = UTerm $ App (UTerm $ App (UTerm $ Symbol "f") (UTerm $ App (UTerm $ App (UTerm $ Symbol "g") (UVar $ IntVar 0)) (UTerm $ Symbol "a"))) (UTerm $ App (UTerm $ App (UTerm $ Symbol "g") (UTerm $ Symbol "b")) (UVar $ IntVar 1))
-lBspT = UTerm $ App (UTerm (App (UTerm $ Symbol "f") (UVar $ IntVar 1))) (UVar $ IntVar 2)
-nlBspT = UTerm $ App (UTerm (App (UTerm $ Symbol "f") (UVar $ IntVar 0))) (UVar $ IntVar 0)
+testTerm :: UTerm (Term String) IntVar
+testTerm = UTerm $ App (UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UTerm $ Symbol "0")) (UTerm $ App (UTerm $ Symbol "s") (UTerm $ Symbol "0"))) (UTerm $ Symbol "nil")
 -}

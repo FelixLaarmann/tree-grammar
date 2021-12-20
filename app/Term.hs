@@ -70,26 +70,30 @@ isLinear = fst . (flip isLinearInCtxt [])
 subTerms computes the list of all subterms of a given term
 -}
 arguments :: UTerm (Term t) v -> [UTerm (Term t) v]
+arguments (UTerm (Symbol _)) = []
 arguments (UTerm (App (UTerm (Symbol f)) r)) = [r]
-arguments (UTerm (App l r)) = arguments l ++ [r]
-arguments x = [x]
+arguments (UTerm (App l r)) = arguments' l ++ [r] where
+  arguments' (UTerm (App (UTerm (Symbol f)) r)) = [r]
+  arguments' (UTerm (App l r)) = arguments' l ++ [r]
+  arguments' x = [x]
 
 subTerms :: UTerm (Term t) v -> [UTerm (Term t) v]
 subTerms (UVar x) = [UVar x]
 subTerms (UTerm (Symbol x)) = [UTerm $ Symbol x]
 subTerms t = (t:) $ (arguments t >>= subTerms)
 
+root :: UTerm (Term t) v -> Either v t
+root (UVar v) = Left v
+root (UTerm (Symbol f)) = Right f
+root (UTerm (App l r)) = root l
+
 findSymbols :: Eq t => UTerm (Term t) v -> [(t, Int)]
 findSymbols (UVar _) = []
 findSymbols (UTerm (Symbol f)) = [(f, 0)]
-findSymbols (UTerm (App l r)) = nub $ case symbol l of
-    Just s -> let args = arguments (UTerm (App l r)) in [(s, length $ args)] ++ (args >>= findSymbols)
-    Nothing -> []
-    where
-  symbol (UVar _) = Nothing
-  symbol (UTerm (Symbol f)) = Just f
-  symbol (UTerm (App (UTerm (Symbol f)) r)) = Just f
-  symbol (UTerm (App l r)) = symbol l
+findSymbols (UTerm (App l r)) = nub $ case root l of
+    Right s -> let args = arguments (UTerm (App l r)) in [(s, length $ args)] ++ (args >>= findSymbols)
+    Left _ -> []
+
 
 treeToTerm :: t -> [UTerm (Term t) v] -> UTerm (Term t) v
 treeToTerm f args = foldl (\t t' -> UTerm $ App t t') (UTerm (Symbol f)) args
@@ -127,14 +131,33 @@ pos t = pos' $ zip (arguments t) [1..] where
 termAtPos :: UTerm (Term t) v -> Pos -> Maybe (UTerm (Term t) v)
 termAtPos t [] = Just $ t where
 termAtPos t (n:ps) = let args = arguments t in
-  if (length args <= n) then Nothing else termAtPos ((arguments t)!!(n-1)) ps
+  if (length args < n && n > 0) then Nothing else termAtPos ((arguments t)!!(n-1)) ps
 
-atPos :: UTerm (Term t) v -> Pos -> Maybe (UTerm (Term t) v)
-atPos t [] = Just $ leftMost t where
-  leftMost (UTerm (App l r)) = leftMost l
-  leftMost x = x
-atPos t (n:ps) = let args = arguments t in
-  if (length args <= n) then Nothing else atPos ((arguments t)!!(n-1)) ps
+symbolAtPos :: UTerm (Term t) v -> Pos -> Maybe t
+symbolAtPos t [] = case root t of
+  Right f -> Just f
+  Left _ -> Nothing
+symbolAtPos t (n:ps) = let args = arguments t in
+  if (length args < n && n > 0) then Nothing else symbolAtPos ((arguments t)!!(n-1)) ps
+
+posTerm :: UTerm (Term t) v -> UTerm (Term Pos) v
+posTerm t = treeToTerm [] $ map (positions []) $ zip (arguments t) [1..] where
+  positions p (ti, i) = let pi = p ++ [i] in treeToTerm pi $ map (positions pi) $ zip (arguments ti) [1..]
+
+mapTerm :: (t -> t') -> UTerm (Term t) v -> UTerm (Term t') v
+mapTerm f (UVar x) = UVar x
+mapTerm f (UTerm (Symbol s)) = UTerm $ Symbol $ f s
+mapTerm f (UTerm (App l r)) = UTerm $ App (mapTerm f l) (mapTerm f r)
+
+mapOverPos :: (Pos -> Maybe t') -> UTerm (Term t) v -> Maybe (UTerm (Term t') v)
+mapOverPos f t = noNothing $ mapTerm f $ posTerm t where
+  noNothing (UVar x) = Just $ UVar x
+  noNothing (UTerm (Symbol (Just s))) = Just $ UTerm $ Symbol $ s
+  noNothing (UTerm (Symbol Nothing)) = Nothing
+  noNothing (UTerm (App l r)) = do
+    l' <- noNothing l
+    r' <- noNothing r
+    return $ UTerm $ App l' r'
 
 {-
 nubByTerms removes duplicates from a list of terms and returns the result list in a BindingMonad

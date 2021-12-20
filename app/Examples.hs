@@ -88,3 +88,6 @@ natListRS = [
   (UTerm $ App (UTerm $ App (UTerm $ Symbol "mult") (UVar $ IntVar 0)) (UTerm $ Symbol "0"),
   UTerm $ Symbol "0")
             ]
+
+t = UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UTerm $ App (UTerm $ Symbol "s") (UTerm $ Symbol "0"))) (UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UTerm $ Symbol "0")) (UTerm $ Symbol "nil"))
+
