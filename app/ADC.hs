@@ -16,6 +16,7 @@ import Control.Monad.Trans
 import Data.List
 import Data.Either
 import Prelude hiding (pi)
+import qualified Data.MultiSet as MultiSet
 
 import Term
 import RS
@@ -34,7 +35,7 @@ data Transition q t = Transition
   , target :: q
   , dConstraint :: [[(Pos, Pos)]]--Bool --better [[(pos, pos)]] because this is a formula (conjunction of disjunctions of disequalities)
   -- Top is []
-  } deriving Show
+  } deriving (Show, Eq, Ord)
 
 data ADC q t = ADC
   { states :: [q]
@@ -381,6 +382,21 @@ eIfIntersectionFin g r = productADC a (heightADC n f) where
            (2^(toInteger $ c a)) * (fac $ toInteger $ c a) * (toInteger $ pi a)) 100000000000
   --n = div (371828182845 * (sizeG g) * (2^(rs^3 + rs + 2)) * (fac $ rs^3) * rs) 100000000000
 
+--lists and MultiSets do not implement this for Ord
+multiSetExtension :: Ord a => (a -> a -> Bool) ->  MultiSet.MultiSet a -> MultiSet.MultiSet a -> Bool
+multiSetExtension ord m n = or $ do
+  x' <- filter (/= []) $ subsequences $ MultiSet.elems m
+  let x = MultiSet.fromList x'
+  let y = MultiSet.difference n (MultiSet.difference m x)
+  x'' <- x'
+  return $ MultiSet.fold (\a b -> b && ord x'' a) True y
+
+(>>>) :: (Ord t, Eq v) => UTerm (Term t) v -> UTerm (Term t) v -> Bool
+(>>>) rho1 rho2 = lexProd (i rho1) (i rho2) where
+  i rho = (depth rho, MultiSet.fromList $ strictSubTerms rho, rho)
+  lexProd (d, m, r) (d', m', r') | d == d' = if (m == m') then lpo r r' else multiSetExtension (>>>) m m'
+                                 | otherwise = d > d'
+
 {-
 Everything below is for Debugging...
 There is a problem with deltaR', because nullaryConstraints and binaryConstraints are empty for exampleRS
@@ -414,4 +430,6 @@ This is a term, that should not be accepted by natListGrammar.
 -}
 testTerm :: UTerm (Term String) IntVar
 testTerm = UTerm $ App (UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UTerm $ Symbol "0")) (UTerm $ App (UTerm $ Symbol "s") (UTerm $ Symbol "0"))) (UTerm $ Symbol "nil")
+
+testTerm' = (UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UTerm $ Symbol "0")) (UTerm $ Symbol "nil"))
 -}

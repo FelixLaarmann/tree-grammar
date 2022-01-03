@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
 
@@ -67,7 +68,7 @@ isLinear :: Eq v => UTerm (Term t) v -> Bool
 isLinear = fst . (flip isLinearInCtxt [])
 
 {-
-subTerms computes the list of all subterms of a given term
+some helper functions on terms
 -}
 arguments :: UTerm (Term t) v -> [UTerm (Term t) v]
 arguments (UTerm (Symbol _)) = []
@@ -76,11 +77,6 @@ arguments (UTerm (App l r)) = arguments' l ++ [r] where
   arguments' (UTerm (App (UTerm (Symbol f)) r)) = [r]
   arguments' (UTerm (App l r)) = arguments' l ++ [r]
   arguments' x = [x]
-
-subTerms :: UTerm (Term t) v -> [UTerm (Term t) v]
-subTerms (UVar x) = [UVar x]
-subTerms (UTerm (Symbol x)) = [UTerm $ Symbol x]
-subTerms t = (t:) $ (arguments t >>= subTerms)
 
 root :: UTerm (Term t) v -> Either v t
 root (UVar v) = Left v
@@ -97,6 +93,14 @@ findSymbols (UTerm (App l r)) = nub $ case root l of
 
 treeToTerm :: t -> [UTerm (Term t) v] -> UTerm (Term t) v
 treeToTerm f args = foldl (\t t' -> UTerm $ App t t') (UTerm (Symbol f)) args
+
+{-
+subTerms computes the list of all subterms of a given term
+-}
+subTerms :: UTerm (Term t) v -> [UTerm (Term t) v]
+subTerms (UVar x) = [UVar x]
+subTerms (UTerm (Symbol x)) = [UTerm $ Symbol x]
+subTerms t = (t:) $ (arguments t >>= subTerms)
 
 {-
 strictSubTerms computes the list of all strict subterms of a given term
@@ -159,6 +163,8 @@ mapOverPos f t = noNothing $ mapTerm f $ posTerm t where
     r' <- noNothing r
     return $ UTerm $ App l' r'
 
+depth :: UTerm (Term t) v -> Int
+depth = maximum . (map length) . pos
 {-
 nubByTerms removes duplicates from a list of terms and returns the result list in a BindingMonad
 -}
@@ -173,3 +179,36 @@ elemByTerms' tests if a term is an element of a list of terms.
 elemByTerms' :: UTerm (Term String) IntVar -> [UTerm (Term String) IntVar] -> Bool
 elemByTerms' _ [] = False
 elemByTerms' t' (t:ts) = (runIdentity $ evalIntBindingT (equals t' t)) || (elemByTerms' t' ts)
+
+eqUTerm :: (Eq t, Eq v) => UTerm (Term t) v -> UTerm (Term t) v -> Bool
+eqUTerm (UVar x) (UVar y) = x == y
+eqUTerm (UTerm (Symbol f)) (UTerm (Symbol g)) = f == g
+eqUTerm (UTerm (App l r)) (UTerm (App l' r')) = eqUTerm l l' && eqUTerm r r'
+eqUTerm _ _ = False
+
+{-
+lpo is a lexicographic path ordering on terms >_lpo
+-}
+lpo :: (Ord t, Eq v) => UTerm (Term t) v -> UTerm (Term t) v -> Bool
+lpo (UVar s) (UVar t) = s /= t  --s >_lpo t iff
+lpo (UVar _) (UTerm _) = False
+lpo (UTerm _) (UVar _) = True --t is a variable and s /= t or
+lpo (UTerm (Symbol f)) (UTerm (Symbol g)) = f > g --constants are compared by the order on the signature
+lpo s t = a || b || c where
+  a = (or $ map (\i -> lpo i t) si) || (or $ map (\i -> eqUTerm i t) si)
+  b = (f > g) && (and $ map (lpo s) ti)
+  c = (f == g) && case findIndex (not) $ zipWith eqUTerm si ti of
+    Nothing -> False
+    Just i -> (lpo (si !! i) (ti !! i)) && (and $ map (lpo s) $ drop (i+1) ti)
+  f = root' s
+  g = root' t
+  si = arguments s
+  ti = arguments t
+  root' (UTerm (Symbol x)) = x
+  root' (UTerm (App l r)) = root' l
+
+instance (Eq t, Eq v) => Eq (UTerm (Term t) v) where
+  (==) = eqUTerm
+
+instance (Ord t, Eq v) => Ord (UTerm (Term t) v) where
+  l <= r = eqUTerm l r || lpo r l
