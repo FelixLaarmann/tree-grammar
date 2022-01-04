@@ -43,6 +43,7 @@ executable tree-grammar
                   base ^>=4.14.0.0,
                   mtl >= 2.2.2,
                   unification-fd ^>=0.11.1,
-                  multiset >= 0.3.4
+                  multiset >= 0.3.4,
+                  containers >= 0.4.0.0
     hs-source-dirs:   app
     default-language: Haskell2010

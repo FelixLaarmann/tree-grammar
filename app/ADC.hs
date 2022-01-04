@@ -1,3 +1,4 @@
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
@@ -17,6 +18,7 @@ import Data.List
 import Data.Either
 import Prelude hiding (pi)
 import qualified Data.MultiSet as MultiSet
+import qualified Data.Map as Map
 
 import Term
 import RS
@@ -87,26 +89,27 @@ weakRun adc t p = do
     [] -> Nothing
     (t:ts) -> return t
 
-nonDetRun :: (Eq q) => ADC q String -> UTerm (Term String) IntVar -> Pos -> [Transition q String]
-nonDetRun adc t p
+{-
+nonDetRun' :: (Eq q) => ADC q String -> UTerm (Term String) IntVar -> Pos -> [Transition q String]
+nonDetRun' adc t p
   | elem p (pos t) = do
       ts <- nonDetWeakRun adc t p
       Just tp <- return $ t `termAtPos` p
-      guard $ satisfies tp $ dConstraint ts
+      guard $ satisfies' tp $ dConstraint ts
       return ts
   | otherwise = []
 
-run :: (Eq q) => ADC q String -> UTerm (Term String) IntVar -> Pos -> Maybe (Transition q String)
-run adc t p
+run' :: (Eq q) => ADC q String -> UTerm (Term String) IntVar -> Pos -> Maybe (Transition q String)
+run' adc t p
   | elem p (pos t) = do
       trans <- weakRun adc t p
       tp <- t `termAtPos` p
-      guard $ satisfies tp $ dConstraint trans
+      guard $ satisfies' tp $ dConstraint trans
       return trans
   | otherwise = Nothing
 
-satisfies :: UTerm (Term String) IntVar -> [[(Pos, Pos)]] -> Bool
-satisfies t conjunction = and $ map (satisfiesDisjunction t) conjunction where
+satisfies' :: UTerm (Term String) IntVar -> [[(Pos, Pos)]] -> Bool
+satisfies' t conjunction = and $ map (satisfiesDisjunction t) conjunction where
   satisfiesDisjunction t disjunction = or $ map (satisfiesDisEq t) disjunction
   satisfiesDisEq :: UTerm (Term String) IntVar -> (Pos, Pos) -> Bool
   satisfiesDisEq t (p1,p2) = not $
@@ -115,8 +118,38 @@ satisfies t conjunction = and $ map (satisfiesDisjunction t) conjunction where
           Just tp2 -> runIdentity $ evalIntBindingT $ tp1 === tp2
           Nothing -> False
         Nothing -> False
+-}
 
-accepts :: (Eq q) => ADC q String -> UTerm (Term String) IntVar -> Bool
+satisfies :: (Eq t, Eq v) => UTerm (Term t) v -> [[(Pos, Pos)]] -> Bool
+satisfies t conjunction = and $ map (satisfiesDisjunction t) conjunction where
+  satisfiesDisjunction t disjunction = or $ map (satisfiesDisEq t) disjunction
+  satisfiesDisEq :: (Eq t, Eq v) => UTerm (Term t) v -> (Pos, Pos) -> Bool
+  satisfiesDisEq t (p1,p2) = not $
+      case t `termAtPos` p1 of
+        Just tp1 -> case t `termAtPos` p2 of
+          Just tp2 -> tp1 == tp2
+          Nothing -> False
+        Nothing -> False
+
+nonDetRun :: (Eq q, Eq t, Eq v) => ADC q t -> UTerm (Term t) v -> Pos -> [Transition q t]
+nonDetRun adc t p
+  | elem p (pos t) = do
+      ts <- nonDetWeakRun adc t p
+      Just tp <- return $ t `termAtPos` p
+      guard $ satisfies tp $ dConstraint ts
+      return ts
+  | otherwise = []
+
+run :: (Eq q, Eq t, Eq v) => ADC q t -> UTerm (Term t) v -> Pos -> Maybe (Transition q t)
+run adc t p
+  | elem p (pos t) = do
+      trans <- weakRun adc t p
+      tp <- t `termAtPos` p
+      guard $ satisfies tp $ dConstraint trans
+      return trans
+  | otherwise = Nothing
+
+accepts :: (Eq q, Eq t, Eq v) => ADC q t -> UTerm (Term t) v -> Bool
 accepts adc t = isJust $ do
   trans <- run adc t []
   guard $ target trans `elem` final adc
@@ -164,6 +197,8 @@ instance Eq (Q0 String IntVar) where
   AcceptOnlyReducible == AcceptOnlyReducible = True
   Q t == Q t' = runIdentity $ evalIntBindingT $ t === t'
   _ == _ = False
+
+deriving instance Ord (Q0 String IntVar)
 
 q0withoutAOR :: (BindingMonad (Term t) v m, Fallible (Term t) v e, MonadTrans em, MonadError e (em m)) =>
                  RS t v -> em m [UTerm (Term t) v]
@@ -397,6 +432,96 @@ multiSetExtension ord m n = or $ do
   lexProd (d, m, r) (d', m', r') | d == d' = if (m == m') then lpo r r' else multiSetExtension (>>>) m m'
                                  | otherwise = d > d'
 
+{-
+languageIsEmpty has to be called like this
+languageIsEmpty = languageIsEmpty' []
+because otherwise the type checker complains about the type variable v to be ambiguous :(
+-}
+languageIsEmpty' :: (Ord q, Ord t, Eq v) => [UTerm (Term (Transition q t)) v] -> ADC q t -> Bool
+languageIsEmpty' ls adc = containsAcceptingRun adc $ fix (e adc) ls Map.empty where
+  nAryProd n = sequence . (take n) . repeat
+  c = do
+    r <- transitions adc
+    pi <- (nub $ join $ dConstraint r) >>= \(a,b) -> [a,b]
+    suf <- filter (/= []) $ subsequences pi
+    guard $ suf `isSuffixOf` pi
+    return suf
+  d = maximum $ do
+    r <- transitions adc
+    pi <- (nub $ join $ dConstraint r) >>= \(a,b) -> [a,b]
+    return $ length pi
+  checkDescending t [] = True
+  checkDescending t (t' : ts) = t >>> t' && checkDescending t' ts
+  isRun :: (Ord q, Ord t, Eq v) => ADC q t -> UTerm (Term (Transition q t)) v -> Bool
+  isRun adc' rho = isJust $ run adc' (mapTerm symbol rho) []
+  f ::  (Ord q, Ord t, Eq v) => ADC q t -> [UTerm (Term (Transition q t)) v]
+             -> (a, Map.Map (UTerm (Term (Transition q t)) v) Bool)
+             -> Transition q t
+             -> ([UTerm (Term (Transition q t)) v],
+                 Map.Map (UTerm (Term (Transition q t)) v) Bool)
+  f adc' eStar (es, rhoMap) r = foldl g ([], Map.empty) $ do --f is inner for loop (for all rho and phi_i in E*)
+    let m = length $ fromState r
+    rhos <- nAryProd m eStar
+    guard $ length rhos == m
+    let rho = treeToTerm r rhos --for each rule build all terms over delta
+    guard $ isRun adc' rho 
+    guard $ (Map.lookup rho rhoMap) /= Just True --and test, whether we have analysed rho before
+    let vs = do
+          p <- (pos rho) \\ c
+        --guard $ not $ p `elem` c
+          guard $ (length p) <= (d + 1)
+          Just s <- return $ symbolAtPos rho p
+          let rhos' = filter (\t -> case symbolAtPos t [] of {Nothing -> False; Just s' -> target s' == target s}) eStar
+          Just rhoP <- return $ termAtPos rho p
+          rho' <- permutations rhos'
+          guard $ not $ null rho'
+          guard $ checkDescending rhoP rho'
+          Just eqCheck <- return $ sequence $ map (\t -> substituteAtPos rho t p) rho'
+          return $ and $ map (\t -> not $ containsCloseEq t p) eqCheck
+    guard $ and vs
+    return (rho, Map.insert rho True rhoMap)
+  g (es, rhoMap) (rho, rhoMap') = (union es [rho], Map.union rhoMap rhoMap') --g is outer for loop, for all transitions
+  e :: (Ord q, Ord t, Eq v) => ADC q t -> [UTerm (Term (Transition q t)) v] ->
+    Map.Map (UTerm (Term (Transition q t)) v) Bool ->
+    ([UTerm (Term (Transition q t)) v], Map.Map (UTerm (Term (Transition q t)) v) Bool)
+  e adc' eStar rhoMap = foldl (f adc' eStar) ([], Map.empty) $ transitions adc'
+  fix f e r | fst (f e r) == e = e
+            | otherwise = fix f (fst $ f e r) (snd $ f e r)
+  containsCloseEq rho p = or $ do
+    let posRho = pos rho
+    p' <- posRho
+    guard $ p' `isPrefixOf` p --is this the right implementation for p' <= p????
+    Just s <- return $ symbolAtPos rho p'
+    let pis = (nub $ join $ dConstraint s) >>= \(a,b) -> [a,b]
+    pi <- pis
+    pi' <- pis
+    guard $ (p' ++ pi) `elem` posRho
+    guard $ (p' ++ pi') `elem` posRho
+    guard $ p' `isProperPrefixOf` pi || p' `isProperPrefixOf` pi' --is this the right implementation for p' < p????
+    Just t <- return $ termAtPos rho (p' ++ pi)
+    Just t' <- return $ termAtPos rho (p' ++ pi')
+    return $ t == t'
+  isProperPrefixOf p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
+  containsAcceptingRun :: (Ord q, Ord t, Eq v) => ADC q t -> [UTerm (Term (Transition q t)) v] -> Bool
+  containsAcceptingRun adc' eStar = not $ or $ map ((accepts adc') . (mapTerm symbol)) eStar
+
+intersectionIsFin :: (Ord nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> Bool
+intersectionIsFin g r = languageIsEmpty' ls $ eIfIntersectionFin g r where
+  ls :: (Ord nt, Newable nt) => [UTerm (Term (Transition ((nt, (Q0 String IntVar)), Integer) String)) IntVar]
+  ls = []
+
+intersectionIsEmpty :: (Ord nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> Bool
+intersectionIsEmpty g r = languageIsEmpty' ls a where
+  a = productADC (constructADC g) (constructNfADC r)
+  ls :: (Ord nt, Newable nt) => [UTerm (Term (Transition ((nt, (Q0 String IntVar))) String)) IntVar]
+  ls = []
+{-
+listForTyping :: (Ord q, Ord t, Eq v) => [UTerm (Term (Transition q t)) v]
+listForTyping = []
+
+languageIsEmpty :: (Ord q, Ord t) => ADC q t -> Bool
+languageIsEmpty = languageIsEmpty' listForTyping
+-}
 {-
 Everything below is for Debugging...
 There is a problem with deltaR', because nullaryConstraints and binaryConstraints are empty for exampleRS

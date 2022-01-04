@@ -133,7 +133,7 @@ pos t = pos' $ zip (arguments t) [1..] where
   pos' ((t,n) : ps) = (map (\ns -> n:ns) (pos t)) ++ pos' ps
 
 termAtPos :: UTerm (Term t) v -> Pos -> Maybe (UTerm (Term t) v)
-termAtPos t [] = Just $ t where
+termAtPos t [] = Just $ t 
 termAtPos t (n:ps) = let args = arguments t in
   if (length args < n && n > 0) then Nothing else termAtPos ((arguments t)!!(n-1)) ps
 
@@ -162,6 +162,22 @@ mapOverPos f t = noNothing $ mapTerm f $ posTerm t where
     l' <- noNothing l
     r' <- noNothing r
     return $ UTerm $ App l' r'
+
+substituteAtPos :: UTerm (Term t) v -> UTerm (Term t) v -> Pos -> Maybe (UTerm (Term t) v)
+substituteAtPos t t' [] = Just t'
+substituteAtPos t t' (p : ps) = do
+    guard $ length args < p && p > 0
+    r <- s
+    args' <- sequence $ applyAt (p-1) (\x -> substituteAtPos x t' ps) args
+    return $ treeToTerm r args'
+  where args = arguments t
+        s = case root t of
+          Left v -> Nothing
+          Right s' -> Just s'
+        applyAt _ f [] = [Nothing]
+        applyAt 0 f (l : ls) = (f l) : map Just ls
+        applyAt n f (l : ls) = (Just l) : applyAt (n-1) f ls
+
 
 depth :: UTerm (Term t) v -> Int
 depth = maximum . (map length) . pos
