@@ -91,3 +91,53 @@ natListRS = [
 
 t = UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UTerm $ App (UTerm $ Symbol "s") (UTerm $ Symbol "0"))) (UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UTerm $ Symbol "0")) (UTerm $ Symbol "nil"))
 
+{-
+Examples from
+"
+CLS-SMT: Bringing Together Combinatory Logic
+Synthesis and Satisfiability Modulo Theories
+"
+paper.
+-}
+
+{-
+sort Example
+-}
+sortTerminals = ["values", "id", "inv", "sortmap", "min", "default"]
+
+{-
+0 := double
+1 := double -> double
+2 := minimal :&: double
+3 := List(double)
+4 := SortedList(double)
+-}
+sortNonTerminals = [0..4]
+
+sortGrammar :: TreeGrammar String Int
+sortGrammar = (2, sortNonTerminals, sortTerminals, rules) where
+  rules = [
+    (4, Terminal "sortmap" [NonTerminal 1, NonTerminal 3]),
+    (2, Terminal "id" [NonTerminal 2]),
+    (2, Terminal "min" [NonTerminal 0, NonTerminal 4]),
+    (0, Terminal "id" [NonTerminal 0]),
+    (0, Terminal "default" []),
+    (0, Terminal "inv" [NonTerminal 0]),
+    (0, Terminal "min" [NonTerminal 0, NonTerminal 4]),
+    (1, Terminal "id" [NonTerminal 1]), --here is a a little problem, compared to the paper, because i can not "switch" arity of id in this implementation
+    (1, Terminal "inv" [NonTerminal 1]), --same for inv o.O
+    (3, Terminal "id" [NonTerminal 3]),
+    (3, Terminal "values" [])
+          ]
+
+sortRS :: RS String IntVar
+sortRS = [
+  (
+    UTerm $ App (UTerm $ Symbol "id") (UVar $ IntVar 0),
+    UVar $ IntVar 0
+  ), -- id(x) -> x
+  (
+    UTerm $ App (UTerm $ App (UTerm $ Symbol "min") (UVar $ IntVar 0)) (UVar $ IntVar 1),
+    UTerm $ App (UTerm $ App (UTerm $ Symbol "min") (UTerm $ Symbol "default")) (UVar $ IntVar 1)
+  ) -- first argument of min has to be a terminal (there is only one solution, so we hardcode it, because I have no plan how to do it in another way :D)
+         ]

@@ -182,7 +182,7 @@ c adc = length [(beta, pi, pi') | (pi, pi') <- pis, beta <- inits pi', beta `isP
 pi(ADC) is the maximum length of π in a constraint π̸=π′ or π′̸=π in ADC.
 -}
 pi :: ADC q t -> Int
-pi = maximum . (map (\(l,r) -> max (length l) (length r))) . atoms
+pi = maximum . (0:) . (map (\(l,r) -> max (length l) (length r))) . atoms
 
 {-
 (q0 r) is the list of all strict subterms of terms in the union of l1 and l2 (modulo renaming of variables)
@@ -371,7 +371,7 @@ intersectSymbols rs gr = intersect (terminalsWithArity gr) (symbolsOf rs)
 heightADC :: Eq t => Integer -> [(t, Int)] -> ADC Integer t
 heightADC n ts = ADC (-1 : [0..n]) [n] trans where
   trans = map (\a -> Transition a [] 0 []) nullaryTs ++
-    [Transition f args (min (1 + maximum args) n) [] |
+    [Transition f args (min (1 + maximum (0 : args)) n) [] |
      (ls, n') <- nArySymbols, f <- ls, args <- nAryProd n' [0..n]]
   nullaryTs = map fst $ filter ((== 0) . snd) ts
   nAryProd n = sequence . (take n) . repeat
@@ -407,8 +407,8 @@ n = (e+1) x |G| x 2^(|R|^3 +|R| + 2 ) x (|R|^3)! x |R|
 where e = 2,718... is Euler's Number.
 -}
 
-eIfIntersectionFin :: (Eq nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> ADC ((nt, (Q0 String IntVar)), Integer) String
-eIfIntersectionFin g r = productADC a (heightADC n f) where
+eIfIntersectionFin :: (Eq nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> (Integer, ADC ((nt, (Q0 String IntVar)), Integer) String)
+eIfIntersectionFin g r = (n, productADC a (heightADC n f)) where
   a = productADC (constructADC g) (constructNfADC r)
   f = intersectSymbols r g
   --rs = sizeR r
@@ -446,12 +446,23 @@ languageIsEmpty' ls adc = containsAcceptingRun adc $ fix (e adc) ls Map.empty wh
     suf <- filter (/= []) $ subsequences pi
     guard $ suf `isSuffixOf` pi
     return suf
-  d = maximum $ do
+  d = maximum $ 0 : do
     r <- transitions adc
     pi <- (nub $ join $ dConstraint r) >>= \(a,b) -> [a,b]
     return $ length pi
   checkDescending t [] = True
   checkDescending t (t' : ts) = t >>> t' && checkDescending t' ts
+  merge xs [] = Just xs
+  merge [] ys = Just ys
+  merge (x:xs) (y:ys) | x == y    = Nothing
+                      | x >>> y   = (merge (x:xs) ys) >>= \m -> return $ y : m
+                      | otherwise = (merge xs (y:ys)) >>= \m -> return $ x : m
+  msort [] = Just []
+  msort xs = go [Just [x] | x <- xs] where
+    go [a] = a
+    go xs = go (pairs xs)
+    pairs ((Just a): (Just b) : t) = merge a b : pairs t
+    pairs t = t
   isRun :: (Ord q, Ord t, Eq v) => ADC q t -> UTerm (Term (Transition q t)) v -> Bool
   isRun adc' rho = isJust $ run adc' (mapTerm symbol rho) []
   f ::  (Ord q, Ord t, Eq v) => ADC q t -> [UTerm (Term (Transition q t)) v]
@@ -474,6 +485,7 @@ languageIsEmpty' ls adc = containsAcceptingRun adc $ fix (e adc) ls Map.empty wh
           let rhos' = filter (\t -> case symbolAtPos t [] of {Nothing -> False; Just s' -> target s' == target s}) eStar
           Just rhoP <- return $ termAtPos rho p
           rho' <- permutations rhos'
+          --let rho' = case msort rhos' of {Nothing -> []; Just x -> x}
           guard $ not $ null rho'
           guard $ checkDescending rhoP rho'
           Just eqCheck <- return $ sequence $ map (\t -> substituteAtPos rho t p) rho'
@@ -506,7 +518,7 @@ languageIsEmpty' ls adc = containsAcceptingRun adc $ fix (e adc) ls Map.empty wh
   containsAcceptingRun adc' eStar = not $ or $ map ((accepts adc') . (mapTerm symbol)) eStar
 
 intersectionIsFin :: (Ord nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> Bool
-intersectionIsFin g r = languageIsEmpty' ls $ eIfIntersectionFin g r where
+intersectionIsFin g r = languageIsEmpty' ls $ snd $ eIfIntersectionFin g r where
   ls :: (Ord nt, Newable nt) => [UTerm (Term (Transition ((nt, (Q0 String IntVar)), Integer) String)) IntVar]
   ls = []
 
@@ -558,3 +570,48 @@ testTerm = UTerm $ App (UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UTerm 
 
 testTerm' = (UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UTerm $ Symbol "0")) (UTerm $ Symbol "nil"))
 -}
+
+{-
+sort Example
+-}
+sortTerminals = ["values", "id", "inv", "sortmap", "min", "default"]
+
+{-
+0 := double
+1 := double -> double
+2 := minimal :&: double
+3 := List(double)
+4 := SortedList(double)
+-}
+sortNonTerminals = [0..4]
+
+sortGrammar :: TreeGrammar String Int
+sortGrammar = (2, sortNonTerminals, sortTerminals, rules) where
+  rules = [
+    (4, Terminal "sortmap" [NonTerminal 1, NonTerminal 3]),
+    (2, Terminal "id" [NonTerminal 2]),
+    (2, Terminal "min" [NonTerminal 0, NonTerminal 4]),
+    (0, Terminal "id" [NonTerminal 0]),
+    (0, Terminal "default" []),
+    (0, Terminal "inv" [NonTerminal 0]),
+    (0, Terminal "min" [NonTerminal 0, NonTerminal 4]),
+    (1, Terminal "id" [NonTerminal 1]), --here is a a little problem, compared to the paper, because i can not "switch" arity of id in this implementation
+    (1, Terminal "inv" [NonTerminal 1]), --same for inv o.O
+    (3, Terminal "id" [NonTerminal 3]),
+    (3, Terminal "values" [])
+          ]
+
+sortRS :: RS String IntVar
+sortRS = [
+  --(
+  --  UTerm $ App (UTerm $ Symbol "id") (UVar $ IntVar 0),
+  --  UVar $ IntVar 0
+  --), -- id(x) -> x
+  (
+    UTerm $ App (UTerm $ App (UTerm $ Symbol "min") (UVar $ IntVar 0)) (UVar $ IntVar 1),
+    UTerm $ App (UTerm $ App (UTerm $ Symbol "min") (UTerm $ Symbol "default")) (UVar $ IntVar 1)
+  ) -- first argument of min has to be a terminal (there is only one solution, so we hardcode it, because I have no plan how to do it in another way :D)
+         ]
+
+sortInhabitant = UTerm $ App (UTerm $ App (UTerm $ Symbol "min") (UTerm $ Symbol "default"))
+  (UTerm $ App (UTerm $ App (UTerm $ Symbol "sortmap") (UTerm $ Symbol "id")) (UTerm $ Symbol "values"))
