@@ -600,7 +600,7 @@ testTerm' = (UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UTerm $ Symbol "0
 
 {-
 sort Example
--}
+
 sortTerminals = ["values", "id", "inv", "sortmap", "min", "default", "app"]
 
 {-
@@ -650,7 +650,7 @@ emptyTest = snd $ languageIsEmpty' ls $ constructADC sortGrammar where
   ls :: [UTerm (Term (Transition Int String)) IntVar]
   ls = []
 test = acc sortInhabitant == not emptyTest
-
+-}
 
 {-
 nAryProd n = sequence . (take n) . repeat

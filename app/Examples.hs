@@ -145,13 +145,13 @@ sortRS = [
 -}
 
 -- app (app (min) (default)) (app (app (sortmap) (id)) (values))
---app l r = UTerm $ App (UTerm $ App (UTerm $ Symbol "app") (l)) (r)
+app l r = UTerm $ App (UTerm $ App (UTerm $ Symbol "app") (l)) (r)
 
---sortInhabitant :: UTerm (Term String) IntVar
---sortInhabitant = app (app (UTerm $ Symbol "min") (UTerm $ Symbol "default")) (app (app (UTerm $ Symbol "sortma--p") (UTerm $ Symbol "id")) (UTerm $ Symbol "values"))
+sortInhabitant :: UTerm (Term String) IntVar
+sortInhabitant = app (app (UTerm $ Symbol "min") (UTerm $ Symbol "default")) (app (app (UTerm $ Symbol "sortma--p") (UTerm $ Symbol "id")) (UTerm $ Symbol "values"))
 
---acc = accepts $ constructADC sortGrammar
---emptyTest = snd $ languageIsEmpty' ls $ constructADC sortGrammar where
+acc = accepts $ constructADC sortGrammar
+emptyTest = snd $ languageIsEmpty' ls $ constructADC sortGrammar where
   ls :: [UTerm (Term (Transition Int String)) IntVar]
   ls = []
---test = acc sortInhabitant == not emptyTest
+test = acc sortInhabitant == not emptyTest
