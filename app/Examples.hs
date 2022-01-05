@@ -103,7 +103,7 @@ paper.
 {-
 sort Example
 -}
-sortTerminals = ["values", "id", "inv", "sortmap", "min", "default"]
+sortTerminals = ["values", "id", "inv", "sortmap", "min", "default", "app"]
 
 {-
 0 := double
@@ -117,19 +117,20 @@ sortNonTerminals = [0..4]
 sortGrammar :: TreeGrammar String Int
 sortGrammar = (2, sortNonTerminals, sortTerminals, rules) where
   rules = [
-    (4, Terminal "sortmap" [NonTerminal 1, NonTerminal 3]),
-    (2, Terminal "id" [NonTerminal 2]),
-    (2, Terminal "min" [NonTerminal 0, NonTerminal 4]),
-    (0, Terminal "id" [NonTerminal 0]),
+    (4, Terminal "app" [Terminal "app" [Terminal "sortmap" [], NonTerminal 1], NonTerminal 3]),
+    (2, Terminal "app" [Terminal "id" [], NonTerminal 2]),
+    (2, Terminal "app" [Terminal "app" [Terminal "min" [], NonTerminal 0], NonTerminal 4]),
+    (0, Terminal "app" [Terminal "id" [], NonTerminal 0]),
     (0, Terminal "default" []),
-    (0, Terminal "inv" [NonTerminal 0]),
-    (0, Terminal "min" [NonTerminal 0, NonTerminal 4]),
-    (1, Terminal "id" [NonTerminal 1]), --here is a a little problem, compared to the paper, because i can not "switch" arity of id in this implementation
-    (1, Terminal "inv" [NonTerminal 1]), --same for inv o.O
-    (3, Terminal "id" [NonTerminal 3]),
+    (0, Terminal "app" [Terminal "inv" [], NonTerminal 0]),
+    (0, Terminal "app" [Terminal "app" [Terminal "min" [], NonTerminal 0], NonTerminal 4]),
+    (1, Terminal "id" []), 
+    (1, Terminal "inv" []), 
+    (3, Terminal "app" [Terminal "id" [], NonTerminal 3]),
     (3, Terminal "values" [])
           ]
 
+{- !!!!!!Has to be updated as well!!!!!!!!!
 sortRS :: RS String IntVar
 sortRS = [
   (
@@ -141,3 +142,16 @@ sortRS = [
     UTerm $ App (UTerm $ App (UTerm $ Symbol "min") (UTerm $ Symbol "default")) (UVar $ IntVar 1)
   ) -- first argument of min has to be a terminal (there is only one solution, so we hardcode it, because I have no plan how to do it in another way :D)
          ]
+-}
+
+-- app (app (min) (default)) (app (app (sortmap) (id)) (values))
+--app l r = UTerm $ App (UTerm $ App (UTerm $ Symbol "app") (l)) (r)
+
+--sortInhabitant :: UTerm (Term String) IntVar
+--sortInhabitant = app (app (UTerm $ Symbol "min") (UTerm $ Symbol "default")) (app (app (UTerm $ Symbol "sortma--p") (UTerm $ Symbol "id")) (UTerm $ Symbol "values"))
+
+--acc = accepts $ constructADC sortGrammar
+--emptyTest = snd $ languageIsEmpty' ls $ constructADC sortGrammar where
+  ls :: [UTerm (Term (Transition Int String)) IntVar]
+  ls = []
+--test = acc sortInhabitant == not emptyTest

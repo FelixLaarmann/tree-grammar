@@ -405,10 +405,14 @@ Automaton eIfIntersectionFin = A x A_n whose  language  is  empty  iff L(G)∩NF
 Choose n \in Nat to be
 n = (e+1) x |G| x 2^(|R|^3 +|R| + 2 ) x (|R|^3)! x |R|
 where e = 2,718... is Euler's Number.
+
+For debugging and because its interesting we return the computed n's for each transition in the first
+projection
 -}
 
-eIfIntersectionFin :: (Eq nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> (Integer, ADC ((nt, (Q0 String IntVar)), Integer) String)
-eIfIntersectionFin g r = (n, productADC a (heightADC n f)) where
+eIfIntersectionFin :: (Eq nt, Newable nt) => TreeGrammar String nt -> RS String IntVar ->
+  Either (ADC (nt, (Q0 String IntVar)) String) (Integer, ADC ((nt, (Q0 String IntVar)), Integer) String)
+eIfIntersectionFin g r = if n == 0 then Left a else Right (n, productADC a (heightADC n f)) where
   a = productADC (constructADC g) (constructNfADC r)
   f = intersectSymbols r g
   --rs = sizeR r
@@ -436,9 +440,12 @@ multiSetExtension ord m n = or $ do
 languageIsEmpty has to be called like this
 languageIsEmpty = languageIsEmpty' []
 because otherwise the type checker complains about the type variable v to be ambiguous :(
+
+For debugging and because its interesting we return the computed b's for each transition in the first
+projection
 -}
-languageIsEmpty' :: (Ord q, Ord t, Eq v) => [UTerm (Term (Transition q t)) v] -> ADC q t -> Bool
-languageIsEmpty' ls adc = containsAcceptingRun adc $ fix (e adc) ls Map.empty where
+languageIsEmpty' :: (Ord q, Ord t, Eq v) => [UTerm (Term (Transition q t)) v] -> ADC q t -> ([Integer], Bool)
+languageIsEmpty' ls adc = (map b $ transitions adc, containsAcceptingRun adc $ fix (e adc) ls Map.empty) where
   nAryProd n = sequence . (take n) . repeat
   c = do
     r <- transitions adc
@@ -446,23 +453,38 @@ languageIsEmpty' ls adc = containsAcceptingRun adc $ fix (e adc) ls Map.empty wh
     suf <- filter (/= []) $ subsequences pi
     guard $ suf `isSuffixOf` pi
     return suf
-  d = maximum $ 0 : do
+  n = fromIntegral $ length $ do -- n(A′) is the number of distinct atomic constraints in the rules of A′
     r <- transitions adc
+    (nub $ join $ dConstraint r)
+  --d(A′) is the maximum length of |π| or |π′| in an atomic constraint π̸=π′ in a (!!!) rule of A′
+  d r = maximum $ 0 : do 
+    --r <- transitions adc
     pi <- (nub $ join $ dConstraint r) >>= \(a,b) -> [a,b]
     return $ length pi
-  checkDescending t [] = True
-  checkDescending t (t' : ts) = t >>> t' && checkDescending t' ts
-  merge xs [] = Just xs
-  merge [] ys = Just ys
-  merge (x:xs) (y:ys) | x == y    = Nothing
-                      | x >>> y   = (merge (x:xs) ys) >>= \m -> return $ y : m
-                      | otherwise = (merge xs (y:ys)) >>= \m -> return $ x : m
-  msort [] = Just []
-  msort xs = go [Just [x] | x <- xs] where
-    go [a] = a
-    go xs = go (pairs xs)
-    pairs ((Just a): (Just b) : t) = merge a b : pairs t
-    pairs t = t
+  --alpha :: Double
+  --alpha = 4 * 2.71828182845 + 2
+  gamma = 331.4348136746072 --2 * alpha^2 
+  --beta = (log 2 + 1) / (log 2)
+  delta = 11.770780163555855 --4 * beta + 2 
+  b r = let sizeQ = toInteger $ length $ states adc in
+    let d' = fromIntegral $ d r in
+      if d' == 0
+      then
+        max
+        (floor $  gamma * (fromIntegral $ sizeQ^2))
+        (sizeQ * (toInteger $ length $ nub $ map symbol $ transitions adc))
+      else
+        max
+        (floor $  gamma * (fromIntegral $ sizeQ^2) * (2^(round $ delta * d' * n * (log $ 2 * d' * n))))
+        (sizeQ * (toInteger $ length $ nub $ map symbol $ transitions adc))
+  --checkDescending t [] = True
+  --checkDescending t (t' : ts) = t >>> t' && checkDescending t' ts
+  checkForSequence 1 r' es = [[r', e] | e <- es, r' >>> e]
+  checkForSequence b' r' es | (fromInteger b') > length es = [] 
+                            | otherwise = do
+                                 e <- es
+                                 guard $ r' >>> e
+                                 map (r':) $ checkForSequence (b' - 1) e es
   isRun :: (Ord q, Ord t, Eq v) => ADC q t -> UTerm (Term (Transition q t)) v -> Bool
   isRun adc' rho = isJust $ run adc' (mapTerm symbol rho) []
   f ::  (Ord q, Ord t, Eq v) => ADC q t -> [UTerm (Term (Transition q t)) v]
@@ -475,19 +497,21 @@ languageIsEmpty' ls adc = containsAcceptingRun adc $ fix (e adc) ls Map.empty wh
     rhos <- nAryProd m eStar
     guard $ length rhos == m
     let rho = treeToTerm r rhos --for each rule build all terms over delta
-    guard $ isRun adc' rho 
+    guard $ isRun adc' rho  
     guard $ (Map.lookup rho rhoMap) /= Just True --and test, whether we have analysed rho before
     let vs = do
-          p <- (pos rho) \\ c
-        --guard $ not $ p `elem` c
-          guard $ (length p) <= (d + 1)
+          p <- (pos rho)
+          guard $ not $ p `elem` c
+          guard $ (length p) <= ((d r) + 1)
           Just s <- return $ symbolAtPos rho p
           let rhos' = filter (\t -> case symbolAtPos t [] of {Nothing -> False; Just s' -> target s' == target s}) eStar
           Just rhoP <- return $ termAtPos rho p
-          rho' <- permutations rhos'
+          --rho' <- nAryProd (fromInteger $ b r) rhos'
           --let rho' = case msort rhos' of {Nothing -> []; Just x -> x}
-          guard $ not $ null rho'
-          guard $ checkDescending rhoP rho'
+          let seqs = checkForSequence (b r) rhoP rhos' --rhos' should be nubbed by construction.
+          guard $ not $ null seqs
+          let rho' = head seqs
+          --guard $ checkDescending rhoP rho'
           Just eqCheck <- return $ sequence $ map (\t -> substituteAtPos rho t p) rho'
           return $ and $ map (\t -> not $ containsCloseEq t p) eqCheck
     guard $ and vs
@@ -518,22 +542,22 @@ languageIsEmpty' ls adc = containsAcceptingRun adc $ fix (e adc) ls Map.empty wh
   containsAcceptingRun adc' eStar = not $ or $ map ((accepts adc') . (mapTerm symbol)) eStar
 
 intersectionIsFin :: (Ord nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> Bool
-intersectionIsFin g r = languageIsEmpty' ls $ snd $ eIfIntersectionFin g r where
+intersectionIsFin g r = case eIfIntersectionFin g r of
+    Left a -> snd $ languageIsEmpty' ls' a
+    Right (n, a) -> snd $ languageIsEmpty' ls a
+  where
   ls :: (Ord nt, Newable nt) => [UTerm (Term (Transition ((nt, (Q0 String IntVar)), Integer) String)) IntVar]
   ls = []
+  ls' :: (Ord nt, Newable nt) => [UTerm (Term (Transition (nt, (Q0 String IntVar)) String)) IntVar]
+  ls' = []
 
 intersectionIsEmpty :: (Ord nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> Bool
-intersectionIsEmpty g r = languageIsEmpty' ls a where
+intersectionIsEmpty g r = snd $ languageIsEmpty' ls a where
   a = productADC (constructADC g) (constructNfADC r)
   ls :: (Ord nt, Newable nt) => [UTerm (Term (Transition ((nt, (Q0 String IntVar))) String)) IntVar]
   ls = []
-{-
-listForTyping :: (Ord q, Ord t, Eq v) => [UTerm (Term (Transition q t)) v]
-listForTyping = []
 
-languageIsEmpty :: (Ord q, Ord t) => ADC q t -> Bool
-languageIsEmpty = languageIsEmpty' listForTyping
--}
+
 {-
 Everything below is for Debugging...
 There is a problem with deltaR', because nullaryConstraints and binaryConstraints are empty for exampleRS
@@ -574,7 +598,7 @@ testTerm' = (UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UTerm $ Symbol "0
 {-
 sort Example
 -}
-sortTerminals = ["values", "id", "inv", "sortmap", "min", "default"]
+sortTerminals = ["values", "id", "inv", "sortmap", "min", "default", "app"]
 
 {-
 0 := double
@@ -588,16 +612,16 @@ sortNonTerminals = [0..4]
 sortGrammar :: TreeGrammar String Int
 sortGrammar = (2, sortNonTerminals, sortTerminals, rules) where
   rules = [
-    (4, Terminal "sortmap" [NonTerminal 1, NonTerminal 3]),
-    (2, Terminal "id" [NonTerminal 2]),
-    (2, Terminal "min" [NonTerminal 0, NonTerminal 4]),
-    (0, Terminal "id" [NonTerminal 0]),
+    (4, Terminal "app" [Terminal "app" [Terminal "sortmap" [], NonTerminal 1], NonTerminal 3]),
+    (2, Terminal "app" [Terminal "id" [], NonTerminal 2]),
+    (2, Terminal "app" [Terminal "app" [Terminal "min" [], NonTerminal 0], NonTerminal 4]),
+    (0, Terminal "app" [Terminal "id" [], NonTerminal 0]),
     (0, Terminal "default" []),
-    (0, Terminal "inv" [NonTerminal 0]),
-    (0, Terminal "min" [NonTerminal 0, NonTerminal 4]),
-    (1, Terminal "id" [NonTerminal 1]), --here is a a little problem, compared to the paper, because i can not "switch" arity of id in this implementation
-    (1, Terminal "inv" [NonTerminal 1]), --same for inv o.O
-    (3, Terminal "id" [NonTerminal 3]),
+    (0, Terminal "app" [Terminal "inv" [], NonTerminal 0]),
+    (0, Terminal "app" [Terminal "app" [Terminal "min" [], NonTerminal 0], NonTerminal 4]),
+    (1, Terminal "id" []), 
+    (1, Terminal "inv" []), 
+    (3, Terminal "app" [Terminal "id" [], NonTerminal 3]),
     (3, Terminal "values" [])
           ]
 
@@ -613,5 +637,24 @@ sortRS = [
   ) -- first argument of min has to be a terminal (there is only one solution, so we hardcode it, because I have no plan how to do it in another way :D)
          ]
 
-sortInhabitant = UTerm $ App (UTerm $ App (UTerm $ Symbol "min") (UTerm $ Symbol "default"))
-  (UTerm $ App (UTerm $ App (UTerm $ Symbol "sortmap") (UTerm $ Symbol "id")) (UTerm $ Symbol "values"))
+-- app (app (min) (default)) (app (app (sortmap) (id)) (values))
+
+app l r = UTerm $ App (UTerm $ App (UTerm $ Symbol "app") (l)) (r)
+sortInhabitant :: UTerm (Term String) IntVar
+sortInhabitant = app (app (UTerm $ Symbol "min") (UTerm $ Symbol "default")) (app (app (UTerm $ Symbol "sortmap") (UTerm $ Symbol "id")) (UTerm $ Symbol "values"))
+acc = accepts $ constructADC sortGrammar
+emptyTest = snd $ languageIsEmpty' ls $ constructADC sortGrammar where
+  ls :: [UTerm (Term (Transition Int String)) IntVar]
+  ls = []
+test = acc sortInhabitant == not emptyTest
+
+
+{-
+checkForSequence' :: Int -> Int -> [Int] -> [[Int]]
+checkForSequence' 1 r' es = [[r', e] | e <- es, r' > e]
+checkForSequence' b' r' es | b' > length es = []
+                           | otherwise = do
+                                e <- es
+                                guard $ r' > e
+                                map (r':) $ checkForSequence' (b' - 1) e es
+-}
