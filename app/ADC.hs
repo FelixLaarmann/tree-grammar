@@ -83,6 +83,7 @@ nonDetWeakRun adc t p
           return trans
   | otherwise = []
 
+
 weakRun :: (Eq t, Eq q) => ADC q t -> UTerm (Term t) v -> Pos -> Maybe (Transition q t)
 weakRun adc t p = do
   case nonDetWeakRun adc t p of
@@ -436,6 +437,19 @@ multiSetExtension ord m n = or $ do
   lexProd (d, m, r) (d', m', r') | d == d' = if (m == m') then lpo r r' else multiSetExtension (>>>) m m'
                                  | otherwise = d > d'
 
+
+
+isRun :: (Eq t, Eq q, Eq v) => ADC q t -> UTerm (Term (Transition q t)) v -> Bool
+isRun adc t = case root t of
+      Right trans -> let children = arguments t in
+        let childTargets = do
+              child <- children
+              Right trans <- return $ root child
+              return $ target trans
+        in
+          (trans `elem` (transitions adc)) && childTargets == fromState trans && (satisfies (mapTerm symbol t) $ dConstraint trans)
+      Left _ -> False
+
 {-
 languageIsEmpty has to be called like this
 languageIsEmpty = languageIsEmpty' []
@@ -485,8 +499,8 @@ languageIsEmpty' ls adc = (map b $ transitions adc, not $ containsAcceptingRun a
                                  e <- es
                                  guard $ r' >>> e
                                  map (r':) $ checkForSequence (b' - 1) e es
-  isRun :: (Ord q, Ord t, Eq v) => ADC q t -> UTerm (Term (Transition q t)) v -> Bool
-  isRun adc' rho = isJust $ run adc' (mapTerm symbol rho) []
+  --isRun :: (Ord q, Ord t, Eq v) => ADC q t -> UTerm (Term (Transition q t)) v -> Bool
+  --isRun adc' rho = isJust $ run adc' (mapTerm symbol rho) []
   f ::  (Ord q, Ord t, Eq v) => ADC q t -> [UTerm (Term (Transition q t)) v]
              -> ([UTerm (Term (Transition q t)) v], Map.Map (UTerm (Term (Transition q t)) v) Bool)
              -> Transition q t
@@ -526,7 +540,7 @@ languageIsEmpty' ls adc = (map b $ transitions adc, not $ containsAcceptingRun a
             | otherwise = fix f (fst $ f e r) (snd $ f e r)
   containsCloseEq rho p = or $ do
     let posRho = pos rho
-    p' <- posRho
+    p' <- posRho 
     guard $ p' `isPrefixOf` p --is this the right implementation for p' <= p????
     Just s <- return $ symbolAtPos rho p'
     let pis = (nub $ join $ dConstraint s) >>= \(a,b) -> [a,b]
@@ -557,7 +571,6 @@ intersectionIsEmpty g r = snd $ languageIsEmpty' ls a where
   a = productADC (constructADC g) (constructNfADC r)
   ls :: (Ord nt, Newable nt) => [UTerm (Term (Transition ((nt, (Q0 String IntVar))) String)) IntVar]
   ls = []
-
 
 
 
@@ -601,6 +614,7 @@ testTerm' = (UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UTerm $ Symbol "0
 {-
 sort Example
 
+
 sortTerminals = ["values", "id", "inv", "sortmap", "min", "default", "app"]
 
 {-
@@ -610,6 +624,7 @@ sortTerminals = ["values", "id", "inv", "sortmap", "min", "default", "app"]
 3 := List(double)
 4 := SortedList(double)
 -}
+
 sortNonTerminals = [0..4]
 
 sortGrammar :: TreeGrammar String Int
@@ -630,14 +645,25 @@ sortGrammar = (2, sortNonTerminals, sortTerminals, rules) where
 
 sortRS :: RS String IntVar
 sortRS = [
-  --(
-  --  UTerm $ App (UTerm $ Symbol "id") (UVar $ IntVar 0),
-  --  UVar $ IntVar 0
-  --), -- id(x) -> x
   (
-    UTerm $ App (UTerm $ App (UTerm $ Symbol "min") (UVar $ IntVar 0)) (UVar $ IntVar 1),
-    UTerm $ App (UTerm $ App (UTerm $ Symbol "min") (UTerm $ Symbol "default")) (UVar $ IntVar 1)
-  ) -- first argument of min has to be a terminal (there is only one solution, so we hardcode it, because I have no plan how to do it in another way :D)
+    app (UTerm $ Symbol "id") (UVar $ IntVar 0),
+    UVar $ IntVar 0
+  ), -- id(x) -> x
+  (
+    app (UTerm $ Symbol "inv") (app (UTerm $ Symbol "inv") (UVar $ IntVar 0)),
+    UVar $ IntVar 0
+  ), -- inv(inv(x)) -> x
+  (
+    app
+    (app (UTerm $ Symbol "sortmap") (UVar $ IntVar 0))
+    (app (app (UTerm $ Symbol "sortmap") (UVar $ IntVar 1)) (UVar $ IntVar 2)),
+    app (app (UTerm $ Symbol "sortmap") (UVar $ IntVar 0)) (UVar $ IntVar 2)
+  ), -- sortmap(x, sortmap (y, z)) -> sortmap(x,z)
+  (
+    app (app (UTerm $ Symbol "min") (UTerm $ Symbol "values")) (UTerm $ Symbol "default"),
+    UTerm $ Symbol "default"
+  ) -- min(values, default) -> default !!!we have to give a signature to constructNfADC to cover the case, that the RS just use a subsignature of the grammar!!!
+  -- min(min(x,y),y) -> min(x,y)
          ]
 
 -- app (app (min) (default)) (app (app (sortmap) (id)) (values))
@@ -650,9 +676,7 @@ emptyTest = snd $ languageIsEmpty' ls $ constructADC sortGrammar where
   ls :: [UTerm (Term (Transition Int String)) IntVar]
   ls = []
 test = acc sortInhabitant == not emptyTest
--}
 
-{-
 nAryProd n = sequence . (take n) . repeat
 c' adc = do
     r <- transitions adc
@@ -694,8 +718,8 @@ checkForSequence b' r' es | (fromInteger b') > length es = []
                                  e <- es
                                  guard $ r' >>> e
                                  map (r':) $ checkForSequence (b' - 1) e es
-isRun :: (Ord q, Ord t, Eq v) => ADC q t -> UTerm (Term (Transition q t)) v -> Bool
-isRun adc' rho = isJust $ run adc' (mapTerm symbol rho) []
+--isRun :: (Ord q, Ord t, Eq v) => ADC q t -> UTerm (Term (Transition q t)) v -> Bool
+--isRun adc' rho = isJust $ run adc' (mapTerm symbol rho) []
 f ::  (Ord q, Ord t, Eq v) => ADC q t -> [UTerm (Term (Transition q t)) v]
              -> ([UTerm (Term (Transition q t)) v], Map.Map (UTerm (Term (Transition q t)) v) Bool)
              -> Transition q t
@@ -732,7 +756,7 @@ e :: (Ord q, Ord t, Eq v) => ADC q t -> [UTerm (Term (Transition q t)) v] ->
     ([UTerm (Term (Transition q t)) v], Map.Map (UTerm (Term (Transition q t)) v) Bool)
 e adc' eStar rhoMap = foldl (\ a b -> f adc' eStar a b c') ([], Map.empty) $ transitions adc'
 fix' f e r adc  | fst (f e r) == e = e
-           | containsAcceptingRun adc e = e
+--           | containsAcceptingRun adc e = e
            | otherwise = fix' f (fst $ f e r) (snd $ f e r) adc
 containsCloseEq rho p = or $ do
     let posRho = pos rho
@@ -751,29 +775,10 @@ containsCloseEq rho p = or $ do
 isProperPrefixOf p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
 containsAcceptingRun :: (Ord q, Ord t, Eq v) => ADC q t -> [UTerm (Term (Transition q t)) v] -> Bool
 containsAcceptingRun adc' eStar = or $ map ((accepts adc') . (mapTerm symbol)) eStar
--}
-{-
-Debugging:
-fix' (e $ constructADC sortGrammar) [] Map.empty
-~>
-[Symbol (Transition {symbol = "min", fromState = [], target = 14, dConstraint = []})]
-
-containsAcceptingRun (constructADC sortGrammar) $ fix' (e $ constructADC sortGrammar) [] Map.empty
-~>
-True
 
 
-accepts (constructADC sortGrammar) $ mapTerm symbol $ head $ fix' (e $ constructADC sortGrammar) [] Map.empty
-~>
-False
+
+
 -}
 
-{-
-checkForSequence' :: Int -> Int -> [Int] -> [[Int]]
-checkForSequence' 1 r' es = [[r', e] | e <- es, r' > e]
-checkForSequence' b' r' es | b' > length es = []
-                           | otherwise = do
-                                e <- es
-                                guard $ r' > e
-                                map (r':) $ checkForSequence' (b' - 1) e es
--}
+

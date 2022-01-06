@@ -130,25 +130,37 @@ sortGrammar = (2, sortNonTerminals, sortTerminals, rules) where
     (3, Terminal "values" [])
           ]
 
-{- !!!!!!Has to be updated as well!!!!!!!!!
+{- !!!!!!Has to be updated as well!!!!!!!!! -}
+
 sortRS :: RS String IntVar
 sortRS = [
   (
-    UTerm $ App (UTerm $ Symbol "id") (UVar $ IntVar 0),
+    app (UTerm $ Symbol "id") (UVar $ IntVar 0),
     UVar $ IntVar 0
   ), -- id(x) -> x
   (
-    UTerm $ App (UTerm $ App (UTerm $ Symbol "min") (UVar $ IntVar 0)) (UVar $ IntVar 1),
-    UTerm $ App (UTerm $ App (UTerm $ Symbol "min") (UTerm $ Symbol "default")) (UVar $ IntVar 1)
-  ) -- first argument of min has to be a terminal (there is only one solution, so we hardcode it, because I have no plan how to do it in another way :D)
+    app (UTerm $ Symbol "inv") (app (UTerm $ Symbol "inv") (UVar $ IntVar 0)),
+    UVar $ IntVar 0
+  ), -- inv(inv(x)) -> x
+  (
+    app
+    (app (UTerm $ Symbol "sortmap") (UVar $ IntVar 0))
+    (app (app (UTerm $ Symbol "sortmap") (UVar $ IntVar 1)) (UVar $ IntVar 2)),
+    app (app (UTerm $ Symbol "sortmap") (UVar $ IntVar 0)) (UVar $ IntVar 2)
+  ), -- sortmap(x, sortmap (y, z)) -> sortmap(x,z)
+  (
+    app (app (UTerm $ Symbol "min") (UTerm $ Symbol "values")) (UTerm $ Symbol "default"),
+    UTerm $ Symbol "default"
+  ) -- min(values, default) -> default !!!we have to give a signature to constructNfADC to cover the case, that the RS just use a subsignature of the grammar!!!
+  -- min(min(x,y),y) -> min(x,y)
          ]
--}
+
 
 -- app (app (min) (default)) (app (app (sortmap) (id)) (values))
 app l r = UTerm $ App (UTerm $ App (UTerm $ Symbol "app") (l)) (r)
 
 sortInhabitant :: UTerm (Term String) IntVar
-sortInhabitant = app (app (UTerm $ Symbol "min") (UTerm $ Symbol "default")) (app (app (UTerm $ Symbol "sortma--p") (UTerm $ Symbol "id")) (UTerm $ Symbol "values"))
+sortInhabitant = app (app (UTerm $ Symbol "min") (UTerm $ Symbol "default")) (app (app (UTerm $ Symbol "sortmap") (UTerm $ Symbol "id")) (UTerm $ Symbol "values"))
 
 acc = accepts $ constructADC sortGrammar
 emptyTest = snd $ languageIsEmpty' ls $ constructADC sortGrammar where
