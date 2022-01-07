@@ -160,14 +160,15 @@ for a rewriting system r, plus two special states:
 - AcceptOnlyReducible which will accept only reducible terms of r 
 -}
 
-data Q0 t v =  AcceptOnlyReducible | Q !(UTerm (TermV t) v) deriving (Show, Eq, Ord)
+data Q0 t v =  AcceptOnlyReducible | Q !(UTerm (TermV t) v) deriving (Show)
 
-{-
+
 instance Eq (Q0 String IntVar) where
   AcceptOnlyReducible == AcceptOnlyReducible = True
   Q t == Q t' = runIdentity $ evalIntBindingT $ t === t'
   _ == _ = False
 
+{-
 deriving instance Ord (Q0 String IntVar)
 -}
 
@@ -278,7 +279,7 @@ constructNfADC' names the state "senseful" for debugging.
 constructNfADC' :: RS String IntVar -> ADC (Q0 String IntVar) String
 constructNfADC' rs = ADC{
   states = qr,
-  final = map Q $ qrWithout,
+  final = map Q qrWithout,
   transitions = deltaR' rs qrWithout
                              } where
   qrWithout = either (\_ -> []) (\x -> x) $ evalFBM $
@@ -294,17 +295,24 @@ This function implements phase 2 of Lukasz algorithm.
 
 constructNfADC uses Int as states for better algorithmic behaviour.
 -}
-constructNfADC :: RS String IntVar -> ADC (Q0 String IntVar) String
-constructNfADC rs = ADC{
-  states = qr,
-  final = map Q $ qrWithout,
-  transitions = deltaR' rs qrWithout
-                             } where
-  qrWithout = either (\_ -> []) (\x -> x) $ evalFBM $
-    (q0withoutAOR rs >>= nubByTerms . mguSubsets')
-  qr = either (\_ -> []) (\x -> x) $ evalFBM $
-    (q0withoutAOR rs >>= nubByTerms . mguSubsets' >>=
-     \q0wQr -> return $ AcceptOnlyReducible : (map Q q0wQr))
+simplifyStates :: Eq q => ADC q t -> ADC Int t
+simplifyStates adc = ADC (map snd indexed) fin trans where
+  indexed = zip (states adc) [0..]
+  fin = do
+    qf <- final adc
+    Just i <- return $ lookup qf indexed
+    return i
+  trans = do
+    t <- transitions adc
+    let from = do
+          dom <- fromState t
+          Just i <- return $ lookup dom indexed
+          return i
+    Just qt <- return $ lookup (target t) indexed
+    return $ Transition (symbol t) from qt (dConstraint t)
+
+constructNfADC :: RS String IntVar -> ADC Int String
+constructNfADC = simplifyStates . constructNfADC'
 
 {-
 constructADC constructs an automata with disequality constraints (ADC)
@@ -403,7 +411,7 @@ projection
 -}
 
 eIfIntersectionFin :: (Eq nt, Newable nt) => TreeGrammar String nt -> RS String IntVar ->
-  Either (ADC (nt, (Q0 String IntVar)) String) (Integer, ADC ((nt, (Q0 String IntVar)), Integer) String)
+  Either (ADC (nt, Int) String) (Integer, ADC ((nt, Int), Integer) String)
 eIfIntersectionFin g r = if n == 0 then Left a else Right (n, productADC a (heightADC n f)) where
   a = productADC (constructADC g) (constructNfADC r)
   f = intersectSymbols r g
@@ -435,7 +443,7 @@ childTargets t = go (arguments t) where
 
 isRun :: (Eq t, Eq q) => ADC q t -> Term (Transition q t) -> Bool
 isRun adc t = let trans = root t in
-  childTargets t == fromState trans && (satisfies (mapTerm symbol t) $ dConstraint trans) && (trans `elem` (transitions adc))
+  childTargets t == fromState trans && (satisfies (fmap symbol t) $ dConstraint trans) && (trans `elem` (transitions adc))
 
 {-
 languageIsEmpty has to be called like this
@@ -541,22 +549,22 @@ languageIsEmpty' ls adc = (map b $ transitions adc, not $ containsAcceptingRun a
     return $ t == t'
   isProperPrefixOf p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
   containsAcceptingRun :: (Ord q, Ord t) => ADC q t -> [Term (Transition q t)] -> Bool
-  containsAcceptingRun adc' eStar = or $ map ((accepts adc') . (mapTerm symbol)) eStar
+  containsAcceptingRun adc' eStar = or $ map ((accepts adc') . (fmap symbol)) eStar
 
 intersectionIsFin :: (Ord nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> Bool
 intersectionIsFin g r = case eIfIntersectionFin g r of
     Left a -> snd $ languageIsEmpty' ls' a
     Right (n, a) -> snd $ languageIsEmpty' ls a
   where
-  ls :: (Ord nt, Newable nt) => [Term (Transition ((nt, (Q0 String IntVar)), Integer) String)]
+  ls :: (Ord nt, Newable nt) => [Term (Transition ((nt, Int), Integer) String)]
   ls = []
-  ls' :: (Ord nt, Newable nt) => [Term (Transition (nt, (Q0 String IntVar)) String)]
+  ls' :: (Ord nt, Newable nt) => [Term (Transition (nt, Int) String)]
   ls' = []
 
 intersectionIsEmpty :: (Ord nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> Bool
 intersectionIsEmpty g r = snd $ languageIsEmpty' ls a where
   a = productADC (constructADC g) (constructNfADC r)
-  ls :: (Ord nt, Newable nt) => [Term (Transition ((nt, (Q0 String IntVar))) String)]
+  ls :: (Ord nt, Newable nt) => [Term (Transition ((nt, Int)) String)]
   ls = []
 
 
@@ -717,7 +725,7 @@ f ::  (Ord q, Ord t) => ADC q t -> [Term (Transition q t)]
              -> (ADC q t -> [Pos])
              -> ([Term (Transition q t)],
                  Map.Map (Term (Transition q t)) Bool)
-f adc' eStar (es, rhoMap) r c' = foldl g (es, rhoMap) $ do --f is inner for loop (for all rho and phi_i in E*)
+f adc' eStar (es, rhoMap) r c' = foldl' g (es, rhoMap) $ do --f is inner for loop (for all rho and phi_i in E*)
     let m = length $ fromState r
     rhos <- nAryProd m eStar
     guard $ length rhos == m
@@ -745,7 +753,7 @@ g (es, rhoMap) (rho, rhoMap') = (union es [rho], Map.union rhoMap rhoMap') --g i
 e :: (Ord q, Ord t) => ADC q t -> [Term (Transition q t)] ->
     Map.Map (Term (Transition q t)) Bool ->
     ([Term (Transition q t)], Map.Map (Term (Transition q t)) Bool)
-e adc' eStar rhoMap = foldl (\ a b -> f adc' eStar a b c') ([], Map.empty) $ transitions adc'
+e adc' eStar rhoMap = foldl' (\ a b -> f adc' eStar a b c') ([], Map.empty) $ transitions adc'
 fix' f e r adc  | fst (f e r) == e = e
 --           | containsAcceptingRun adc e = e
            | otherwise = fix' f (fst $ f e r) (snd $ f e r) adc
@@ -765,7 +773,7 @@ containsCloseEq rho p = or $ do
     return $ t == t'
 isProperPrefixOf p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
 containsAcceptingRun :: (Ord q, Ord t) => ADC q t -> [Term (Transition q t)] -> Bool
-containsAcceptingRun adc' eStar = or $ map ((accepts adc') . (mapTerm symbol)) eStar
+containsAcceptingRun adc' eStar = or $ map ((accepts adc') . (fmap symbol)) eStar
 
 
 

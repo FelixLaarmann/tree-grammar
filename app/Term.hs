@@ -43,7 +43,7 @@ findSymbols (App l r) = nub $ let args = arguments (App l r) in [(root l, length
 --make findSymbols tail-recursive?!
 
 treeToTerm :: t -> [Term t] -> Term t
-treeToTerm f args = foldl App (Symbol f) args
+treeToTerm f args = foldl' App (Symbol f) args
 
 {-
 subTerms computes the list of all subterms of a given term
@@ -81,11 +81,11 @@ posTerm :: Term t -> Term Pos
 posTerm t = treeToTerm [] $ map (positions []) $ zip (arguments t) [1..] where
   positions p (ti, i) = let pi = p ++ [i] in treeToTerm pi $ map (positions pi) $ zip (arguments ti) [1..]
 
-mapTerm :: (t -> t') -> Term t -> Term t'
-mapTerm = fmap
+--mapTerm :: (t -> t') -> Term t -> Term t'
+--mapTerm = fmap
 
 mapOverPos :: (Pos -> Maybe t') -> Term t -> Maybe (Term t')
-mapOverPos f t = noNothing $ mapTerm f $ posTerm t where
+mapOverPos f t = noNothing $ fmap f $ posTerm t where
   noNothing (Symbol (Just s)) = Just $ Symbol s
   noNothing (Symbol Nothing) = Nothing
   noNothing (App l r) = do
