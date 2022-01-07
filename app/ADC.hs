@@ -32,17 +32,17 @@ For CLS only nullary or binary domains of transitions are possible.
 -}
 
 data Transition q t = Transition
-  { symbol :: t
-  , fromState :: [q]
-  , target :: q
-  , dConstraint :: [[(Pos, Pos)]]--Bool --better [[(pos, pos)]] because this is a formula (conjunction of disjunctions of disequalities)
+  { symbol :: !t
+  , fromState :: ![q]
+  , target :: !q
+  , dConstraint :: ![[(Pos, Pos)]]--Bool --better [[(pos, pos)]] because this is a formula (conjunction of disjunctions of disequalities)
   -- Top is []
   } deriving (Show, Eq, Ord)
 
 data ADC q t = ADC
-  { states :: [q]
-  , final :: [q]
-  , transitions :: [Transition q t]
+  { states :: ![q]
+  , final :: ![q]
+  , transitions :: ![Transition q t]
   } deriving Show
 
 
@@ -128,7 +128,7 @@ satisfies t conjunction = and $ map (satisfiesDisjunction t) conjunction where
   satisfiesDisEq t (p1,p2) = not $
       case t `termAtPos` p1 of
         Just tp1 -> case t `termAtPos` p2 of
-          Just tp2 -> tp1 == tp2
+          Just tp2 -> eqUTerm tp1 tp2
           Nothing -> False
         Nothing -> False
 
@@ -192,14 +192,16 @@ for a rewriting system r, plus two special states:
 - AcceptOnlyReducible which will accept only reducible terms of r 
 -}
 
-data Q0 t v =  AcceptOnlyReducible | Q (UTerm (Term t) v) deriving (Show)
+data Q0 t v =  AcceptOnlyReducible | Q !(UTerm (Term t) v) deriving (Show, Eq, Ord)
 
+{-
 instance Eq (Q0 String IntVar) where
   AcceptOnlyReducible == AcceptOnlyReducible = True
   Q t == Q t' = runIdentity $ evalIntBindingT $ t === t'
   _ == _ = False
 
 deriving instance Ord (Q0 String IntVar)
+-}
 
 q0withoutAOR :: (BindingMonad (Term t) v m, Fallible (Term t) v e, MonadTrans em, MonadError e (em m)) =>
                  RS t v -> em m [UTerm (Term t) v]
@@ -437,17 +439,17 @@ multiSetExtension ord m n = or $ do
   lexProd (d, m, r) (d', m', r') | d == d' = if (m == m') then lpo r r' else multiSetExtension (>>>) m m'
                                  | otherwise = d > d'
 
-
+childTargets :: UTerm (Term (Transition q t)) v -> [q]
+childTargets t = go (arguments t) where
+  go [] = []
+  go (child : children) = (case root child of
+    Right trans -> target trans
+    Left _ -> error "shit") : go children
 
 isRun :: (Eq t, Eq q, Eq v) => ADC q t -> UTerm (Term (Transition q t)) v -> Bool
 isRun adc t = case root t of
-      Right trans -> let children = arguments t in
-        let childTargets = do
-              child <- children
-              Right trans <- return $ root child
-              return $ target trans
-        in
-          (trans `elem` (transitions adc)) && childTargets == fromState trans && (satisfies (mapTerm symbol t) $ dConstraint trans)
+      Right trans -> 
+        childTargets t == fromState trans && (satisfies (mapTerm symbol t) $ dConstraint trans) && (trans `elem` (transitions adc))
       Left _ -> False
 
 {-
@@ -613,7 +615,7 @@ testTerm' = (UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UTerm $ Symbol "0
 
 {-
 sort Example
-
+-}
 
 sortTerminals = ["values", "id", "inv", "sortmap", "min", "default", "app"]
 
@@ -777,8 +779,5 @@ containsAcceptingRun :: (Ord q, Ord t, Eq v) => ADC q t -> [UTerm (Term (Transit
 containsAcceptingRun adc' eStar = or $ map ((accepts adc') . (mapTerm symbol)) eStar
 
 
-
-
--}
 
 

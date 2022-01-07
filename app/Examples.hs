@@ -102,7 +102,8 @@ paper.
 
 {-
 sort Example
--}
+
+
 sortTerminals = ["values", "id", "inv", "sortmap", "min", "default", "app"]
 
 {-
@@ -167,3 +168,5 @@ emptyTest = snd $ languageIsEmpty' ls $ constructADC sortGrammar where
   ls :: [UTerm (Term (Transition Int String)) IntVar]
   ls = []
 test = acc sortInhabitant == not emptyTest
+
+-}

@@ -63,7 +63,7 @@ We could model Trees as following, to enforce non-terminal symbols
 to have arity 0.
 -}
 
-data T t nt = Terminal t [T t nt] | NonTerminal nt deriving (Show, Eq)
+data T t nt = Terminal !t ![T t nt] | NonTerminal nt deriving (Show, Eq)
 
 type TreeGrammar t nt = (nt, [nt], [t], [(nt, T t nt)])
 

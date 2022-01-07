@@ -1,3 +1,4 @@
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
@@ -19,7 +20,7 @@ import Data.Either
 {-
 Simple Termalgebra that supports unification-fd
 -}
-data Term t v = Symbol t | App v v deriving (Show, Eq, Traversable, Functor, Foldable)
+data Term t v = Symbol !t | App !v !v deriving (Show, Eq, Ord, Traversable, Functor, Foldable)
 
 instance Eq t => Unifiable (Term t) where
   zipMatch (Symbol x) (Symbol y) | (x == y) = Just (Symbol x)
@@ -73,10 +74,10 @@ some helper functions on terms
 arguments :: UTerm (Term t) v -> [UTerm (Term t) v]
 arguments (UTerm (Symbol _)) = []
 arguments (UTerm (App (UTerm (Symbol f)) r)) = [r]
-arguments (UTerm (App l r)) = arguments' l ++ [r] where
-  arguments' (UTerm (App (UTerm (Symbol f)) r)) = [r]
-  arguments' (UTerm (App l r)) = arguments' l ++ [r]
-  arguments' x = [x]
+arguments (UTerm (App l r)) = arguments' l [r] where
+  arguments' (UTerm (App (UTerm (Symbol f)) r)) s = r : s
+  arguments' (UTerm (App l r)) s = arguments' l (arguments' r s)
+  arguments' x s = x : s
 
 root :: UTerm (Term t) v -> Either v t
 root (UVar v) = Left v
@@ -226,5 +227,12 @@ lpo s t = a || b || c where
 instance (Eq t, Eq v) => Eq (UTerm (Term t) v) where
   (==) = eqUTerm
 
+
+leqUTerm :: (Ord t, Eq v) => UTerm (Term t) v -> UTerm (Term t) v -> Bool
+leqUTerm (UVar x) (UVar y) = x == y
+leqUTerm (UTerm (Symbol f)) (UTerm (Symbol g)) = f <= g
+leqUTerm (UTerm (App l r)) (UTerm (App l' r')) = leqUTerm l l' && leqUTerm r r'
+leqUTerm _ _ = False
+
 instance (Ord t, Eq v) => Ord (UTerm (Term t) v) where
-  l <= r = eqUTerm l r || lpo r l
+  l <= r = leqUTerm r l
