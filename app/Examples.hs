@@ -21,6 +21,7 @@ import ADC
 import Grammar
 
 {-
+{-
 Example from Lukasz slides (Pres01, slide 21)
 x -> 0
 y -> 1
@@ -67,14 +68,25 @@ nextExample = [(UTerm $ App (UTerm (App (UTerm $ Symbol "f") (UVar $ IntVar 0)))
 normalized regular tree grammar
 -}
 natListGrammar :: TreeGrammar String Int
-natListGrammar = (0, [0,1], ["nil", "cons", "0", "s"], rules) where
+natListGrammar = TreeGrammar 0 [0,1] ["nil", "cons", "0", "s"] rules where
   rules = [
     (0, Terminal "nil" []),
     (0, Terminal "cons" [NonTerminal 1, NonTerminal 0]),
-    (0, Terminal "++" [NonTerminal 0, NonTerminal 0]),
+    (1, Terminal "0" []),
+    (1, Terminal "s" [NonTerminal 1])
+          ]
+
+{-
+regular tree grammar
+-}
+natListGrammar' :: TreeGrammar String Int
+natListGrammar' = TreeGrammar 0 [0,1] ["nil", "cons", "0", "s"] rules where
+  rules = [
+    (0, Terminal "nil" []),
+    (0, Terminal "cons" [Terminal "s" [NonTerminal 1], NonTerminal 0]),
     (1, Terminal "0" []),
     (1, Terminal "s" [NonTerminal 1]),
-    (1, Terminal "mult" [NonTerminal 1, NonTerminal 1])
+    (1, NonTerminal 1)
           ]
 
 natListRS :: RS String IntVar
@@ -168,5 +180,7 @@ emptyTest = snd $ languageIsEmpty' ls $ constructADC sortGrammar where
   ls :: [UTerm (Term (Transition Int String)) IntVar]
   ls = []
 test = acc sortInhabitant == not emptyTest
+
+-}
 
 -}

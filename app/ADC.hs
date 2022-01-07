@@ -1,4 +1,3 @@
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
@@ -56,7 +55,7 @@ prettyPrintADC adc = do
   mapM_ print $ transitions adc
 
 {-
-A run of an ADC A on a term T is a mapping rho :: pos(T) -> transitions(A).
+A run of an ADC A on a ground term T is a mapping rho :: pos(T) -> transitions(A).
 An ADC can be non-deterministic, which can simply be implemented with lists
 in the codomain of rho.
 
@@ -67,7 +66,7 @@ A ground term is accepted by an ADC if there is a run on this term such that rho
 is a transition whose target is a final state.
 -}
 
-nonDetWeakRun :: (Eq t, Eq q) => ADC q t -> UTerm (Term t) v -> Pos -> [Transition q t]
+nonDetWeakRun :: (Eq q, Eq t) => ADC q t -> Term t -> Pos -> [Transition q t]
 nonDetWeakRun adc t p
   | elem p (pos t) = do
       Just sp <- return $ t `symbolAtPos` p
@@ -84,55 +83,24 @@ nonDetWeakRun adc t p
   | otherwise = []
 
 
-weakRun :: (Eq t, Eq q) => ADC q t -> UTerm (Term t) v -> Pos -> Maybe (Transition q t)
+weakRun :: (Eq q, Eq t) => ADC q t -> Term t -> Pos -> Maybe (Transition q t)
 weakRun adc t p = do
   case nonDetWeakRun adc t p of
     [] -> Nothing
     (t:ts) -> return t
 
-{-
-nonDetRun' :: (Eq q) => ADC q String -> UTerm (Term String) IntVar -> Pos -> [Transition q String]
-nonDetRun' adc t p
-  | elem p (pos t) = do
-      ts <- nonDetWeakRun adc t p
-      Just tp <- return $ t `termAtPos` p
-      guard $ satisfies' tp $ dConstraint ts
-      return ts
-  | otherwise = []
-
-run' :: (Eq q) => ADC q String -> UTerm (Term String) IntVar -> Pos -> Maybe (Transition q String)
-run' adc t p
-  | elem p (pos t) = do
-      trans <- weakRun adc t p
-      tp <- t `termAtPos` p
-      guard $ satisfies' tp $ dConstraint trans
-      return trans
-  | otherwise = Nothing
-
-satisfies' :: UTerm (Term String) IntVar -> [[(Pos, Pos)]] -> Bool
-satisfies' t conjunction = and $ map (satisfiesDisjunction t) conjunction where
-  satisfiesDisjunction t disjunction = or $ map (satisfiesDisEq t) disjunction
-  satisfiesDisEq :: UTerm (Term String) IntVar -> (Pos, Pos) -> Bool
-  satisfiesDisEq t (p1,p2) = not $
-      case t `termAtPos` p1 of
-        Just tp1 -> case t `termAtPos` p2 of
-          Just tp2 -> runIdentity $ evalIntBindingT $ tp1 === tp2
-          Nothing -> False
-        Nothing -> False
--}
-
-satisfies :: (Eq t, Eq v) => UTerm (Term t) v -> [[(Pos, Pos)]] -> Bool
+satisfies :: (Eq t) => Term t -> [[(Pos, Pos)]] -> Bool
 satisfies t conjunction = and $ map (satisfiesDisjunction t) conjunction where
   satisfiesDisjunction t disjunction = or $ map (satisfiesDisEq t) disjunction
-  satisfiesDisEq :: (Eq t, Eq v) => UTerm (Term t) v -> (Pos, Pos) -> Bool
+  satisfiesDisEq :: (Eq t) => Term t -> (Pos, Pos) -> Bool
   satisfiesDisEq t (p1,p2) = not $
       case t `termAtPos` p1 of
         Just tp1 -> case t `termAtPos` p2 of
-          Just tp2 -> eqUTerm tp1 tp2
+          Just tp2 -> tp1 == tp2
           Nothing -> False
         Nothing -> False
 
-nonDetRun :: (Eq q, Eq t, Eq v) => ADC q t -> UTerm (Term t) v -> Pos -> [Transition q t]
+nonDetRun :: (Eq q, Eq t) => ADC q t -> Term t -> Pos -> [Transition q t]
 nonDetRun adc t p
   | elem p (pos t) = do
       ts <- nonDetWeakRun adc t p
@@ -141,7 +109,7 @@ nonDetRun adc t p
       return ts
   | otherwise = []
 
-run :: (Eq q, Eq t, Eq v) => ADC q t -> UTerm (Term t) v -> Pos -> Maybe (Transition q t)
+run :: (Eq q, Eq t) => ADC q t -> Term t -> Pos -> Maybe (Transition q t)
 run adc t p
   | elem p (pos t) = do
       trans <- weakRun adc t p
@@ -150,7 +118,7 @@ run adc t p
       return trans
   | otherwise = Nothing
 
-accepts :: (Eq q, Eq t, Eq v) => ADC q t -> UTerm (Term t) v -> Bool
+accepts :: (Eq q, Eq t) => ADC q t -> Term t -> Bool
 accepts adc t = isJust $ do
   trans <- run adc t []
   guard $ target trans `elem` final adc
@@ -192,7 +160,7 @@ for a rewriting system r, plus two special states:
 - AcceptOnlyReducible which will accept only reducible terms of r 
 -}
 
-data Q0 t v =  AcceptOnlyReducible | Q !(UTerm (Term t) v) deriving (Show, Eq, Ord)
+data Q0 t v =  AcceptOnlyReducible | Q !(UTerm (TermV t) v) deriving (Show, Eq, Ord)
 
 {-
 instance Eq (Q0 String IntVar) where
@@ -203,13 +171,13 @@ instance Eq (Q0 String IntVar) where
 deriving instance Ord (Q0 String IntVar)
 -}
 
-q0withoutAOR :: (BindingMonad (Term t) v m, Fallible (Term t) v e, MonadTrans em, MonadError e (em m)) =>
-                 RS t v -> em m [UTerm (Term t) v]
+q0withoutAOR :: (BindingMonad (TermV t) v m, Fallible (TermV t) v e, MonadTrans em, MonadError e (em m)) =>
+                 RS t v -> em m [UTerm (TermV t) v]
 q0withoutAOR r = do
   lin <- l1 r
   nlin' <- l2 r
   let nlin = map snd nlin'
-  nubbed <- nubByTerms $ (lin >>= strictSubTerms) ++ (nlin >>= strictSubTerms)
+  nubbed <- nubByTerms $ (lin >>= strictSubTermsV) ++ (nlin >>= strictSubTermsV)
   --let modRenaming = filter noUVar nubbed
   modRenaming <- mapM freshen $ filter noUVar nubbed
   x <- lift freeVar
@@ -217,7 +185,7 @@ q0withoutAOR r = do
     noUVar (UVar _) = False
     noUVar _ = True
 
-q0 :: (BindingMonad (Term t) v m, Fallible (Term t) v e, MonadTrans em, MonadError e (em m)) =>
+q0 :: (BindingMonad (TermV t) v m, Fallible (TermV t) v e, MonadTrans em, MonadError e (em m)) =>
       RS t v -> em m ([Q0 t v])
 q0 r = do
   q0wQr <- q0withoutAOR r
@@ -226,8 +194,8 @@ q0 r = do
 {-
 mgu computes the most general unifier of a list of terms
 -}
-mgu :: (BindingMonad (Term t) v m, Fallible (Term t) v e, MonadTrans em, MonadError e (em m)) =>
-       [UTerm (Term t) v] -> em m (UTerm (Term t) v)
+mgu :: (BindingMonad (TermV t) v m, Fallible (TermV t) v e, MonadTrans em, MonadError e (em m)) =>
+       [UTerm (TermV t) v] -> em m (UTerm (TermV t) v)
 mgu ([]) = error "mgu of empty list"
 mgu (t:[]) = return t
 mgu (t1:t2:ts) = do
@@ -240,13 +208,13 @@ mgu (t1:t2:ts) = do
 mguSubsets computes the powerset modulo unification from a set/list of terms
 with the mgu to represent each subset
 -}
-mguSubsets :: (BindingMonad (Term t) v m, Fallible (Term t) v e, MonadTrans em,
+mguSubsets :: (BindingMonad (TermV t) v m, Fallible (TermV t) v e, MonadTrans em,
                MonadError e (em m)) =>
-               [UTerm (Term t) v] -> [em m (UTerm (Term t) v)]
+               [UTerm (TermV t) v] -> [em m (UTerm (TermV t) v)]
 mguSubsets ts = map mgu $ filter (not . null) $ subsequences ts
 
 
-mguSubsets' :: [UTerm (Term String) IntVar] -> [UTerm (Term String) IntVar]
+mguSubsets' :: [UTerm (TermV String) IntVar] -> [UTerm (TermV String) IntVar]
 mguSubsets' ts = fromErrorList $ map evalFBM $ either (\_ -> []) (\x -> x) $ evalFBM $
   (return . mguSubsets) ts where
     fromErrorList [] = []
@@ -256,7 +224,7 @@ mguSubsets' ts = fromErrorList $ map evalFBM $ either (\_ -> []) (\x -> x) $ eva
 {-
 deltaR' computes the transitions for n-ary symbols.
 -}
-deltaR' :: RS String IntVar -> [UTerm (Term String) IntVar]
+deltaR' :: RS String IntVar -> [UTerm (TermV String) IntVar]
   -> [Transition (Q0 String IntVar) String]
 deltaR' rs qr = tops ++ constraints where
 {-
@@ -275,7 +243,7 @@ f(q_u_1,...,q_u_n)-c−> q_u where q_u_1,...,q_u_n, q_u ∈ Qr and:
          --if (at least???) one of the q_u_i’s is q_r
          [Transition s (map Q args) AcceptOnlyReducible []  |
           (ls, n) <- nArySymbols, s <- ls, args <- fromStates n,
-          not $ null $ instanceOfSome (treeToTerm s args) l1s]
+          not $ null $ instanceOfSome (treeToTermV s args) l1s]
          --or f(u_1,...,u_n) is an instance of some s∈ L1, then q_u=q_r and c=⊤
   q0without = either (\_ -> []) (\x -> x) $ evalFBM $ q0withoutAOR rs
   constraints = do
@@ -283,7 +251,7 @@ f(q_u_1,...,q_u_n)-c−> q_u where q_u_1,...,q_u_n, q_u ∈ Qr and:
     s <- ls
     args <- fromStates n
     case (evalFBM $ mgu $
-          instanceOfSome (treeToTerm s args) q0without) of
+          instanceOfSome (treeToTermV s args) q0without) of
       Right u -> do
         guard (elemByTerms' u qr)
         return $ Transition s (map Q args) (Q $ u) form where
@@ -291,7 +259,7 @@ f(q_u_1,...,q_u_n)-c−> q_u where q_u_1,...,q_u_n, q_u ∈ Qr and:
             l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 rs
             --l is a pair of the prelinearized and the linearized terms
             guard $ isRight $ evalFBM $ unify u $ snd l --here the linearized one has to be used
-            guard $ not $ null $ instanceOfSome (treeToTerm s args) [snd l] --this guard is the result of a discussion with Lukasz and has to be added in the paper
+            guard $ not $ null $ instanceOfSome (treeToTermV s args) [snd l] --this guard is the result of a discussion with Lukasz and has to be added in the paper
             let xs = vars $ fst l --here the prelinearized
             return $ modSym $ do
               --look up all positions, if there are for example 3 or more positions of x, all pairs p1 /= p2 have to be checked.
@@ -301,9 +269,30 @@ f(q_u_1,...,q_u_n)-c−> q_u where q_u_1,...,q_u_n, q_u ∈ Qr and:
       Left _ -> mzero
 
 {-
+constructNfADC' constructs an automata with disequality constraints (ADC) from a given
+rewriting system rs.
+This function implements phase 2 of Lukasz algorithm.
+
+constructNfADC' names the state "senseful" for debugging.
+-}
+constructNfADC' :: RS String IntVar -> ADC (Q0 String IntVar) String
+constructNfADC' rs = ADC{
+  states = qr,
+  final = map Q $ qrWithout,
+  transitions = deltaR' rs qrWithout
+                             } where
+  qrWithout = either (\_ -> []) (\x -> x) $ evalFBM $
+    (q0withoutAOR rs >>= nubByTerms . mguSubsets')
+  qr = either (\_ -> []) (\x -> x) $ evalFBM $
+    (q0withoutAOR rs >>= nubByTerms . mguSubsets' >>=
+     \q0wQr -> return $ AcceptOnlyReducible : (map Q q0wQr))
+
+{-
 constructNfADC constructs an automata with disequality constraints (ADC) from a given
 rewriting system rs.
 This function implements phase 2 of Lukasz algorithm.
+
+constructNfADC uses Int as states for better algorithmic behaviour.
 -}
 constructNfADC :: RS String IntVar -> ADC (Q0 String IntVar) String
 constructNfADC rs = ADC{
@@ -324,8 +313,8 @@ from a given TreeGrammar.
 This function implements phase 1 of Lukasz algorithm.
 -}
 constructADC :: (Eq t, Eq nt,  Newable nt) => TreeGrammar t nt -> ADC nt t
-constructADC g = ADC n [s] (map transition r) where
-  (s, n, _, r) = normalize g
+constructADC g = ADC (nonTerminals g') [axiom g'] (map transition $ rules g') where
+  g' = normalize g
   transition (a, Terminal f args) = Transition f (from args) a [] --partial function, because g is normalized
   from [] = []
   from (NonTerminal a : qs) = a : (from qs) --partial function, because g is normalized
@@ -364,7 +353,7 @@ f(q_i_1,..., q_i_n) -> q_min(max(i_1,...,i_n)+1, n) for n > 0 and all i_1,...i_n
 Otherwise the intersection would be emtpy, trivially :D)
 -}
 terminalsWithArity :: Eq t => TreeGrammar t nt -> [(t, Int)]
-terminalsWithArity (_, _, _, rules) = nub $ rules >>= (arity . snd) where
+terminalsWithArity g = nub $ rules g >>= (arity . snd) where
   arity (Terminal t args) = (t, length args) : (args >>= arity)
   arity (NonTerminal _) = []
 
@@ -384,15 +373,15 @@ heightADC n ts = ADC (-1 : [0..n]) [n] trans where
 [CJ03] defines the size of a term as the cardinal
 |Pos(t)| of its positions set.
 -}
-sizeT :: UTerm (Term t) v -> Integer
-sizeT = toInteger . length . pos
+sizeT :: UTerm (TermV t) v -> Integer
+sizeT = toInteger . length . posV
 
 {-
 I'm not sure how Lukasz defines the size of a tree grammar, but usually the size
 of a grammar is something like the sum of the sizes of all right-hand sides of the production rules.
 -}
 sizeG :: TreeGrammar t nt -> Integer
-sizeG (_, _, _, r) = sum $ map (size . snd) r where
+sizeG g = sum $ map (size . snd) $ rules g where
   size (Terminal _ ts) = 1 + (sum $ map size ts)
   size (NonTerminal _) = 0
 
@@ -401,7 +390,7 @@ sizeG (_, _, _, r) = sum $ map (size . snd) r where
 sum of the sizes of its left members
 -}
 sizeR :: RS t v -> Integer
-sizeR r = sum $ map (sizeT . fst) r
+sizeR r = sum $ map (sizeT . fst) $ rRules r
 
 {-
 Automaton eIfIntersectionFin = A x A_n whose  language  is  empty  iff L(G)∩NF(R) is finite, where A = A_G (phase 1) x A_R (phase 2)
@@ -433,24 +422,20 @@ multiSetExtension ord m n = or $ do
   x'' <- x'
   return $ MultiSet.fold (\a b -> b && ord x'' a) True y
 
-(>>>) :: (Ord t, Eq v) => UTerm (Term t) v -> UTerm (Term t) v -> Bool
+(>>>) :: (Ord t) => Term t -> Term t -> Bool
 (>>>) rho1 rho2 = lexProd (i rho1) (i rho2) where
   i rho = (depth rho, MultiSet.fromList $ strictSubTerms rho, rho)
   lexProd (d, m, r) (d', m', r') | d == d' = if (m == m') then lpo r r' else multiSetExtension (>>>) m m'
                                  | otherwise = d > d'
 
-childTargets :: UTerm (Term (Transition q t)) v -> [q]
+childTargets :: Term (Transition q t) -> [q]
 childTargets t = go (arguments t) where
   go [] = []
-  go (child : children) = (case root child of
-    Right trans -> target trans
-    Left _ -> error "shit") : go children
+  go (child : children) = (target $ root child)  : go children
 
-isRun :: (Eq t, Eq q, Eq v) => ADC q t -> UTerm (Term (Transition q t)) v -> Bool
-isRun adc t = case root t of
-      Right trans -> 
-        childTargets t == fromState trans && (satisfies (mapTerm symbol t) $ dConstraint trans) && (trans `elem` (transitions adc))
-      Left _ -> False
+isRun :: (Eq t, Eq q) => ADC q t -> Term (Transition q t) -> Bool
+isRun adc t = let trans = root t in
+  childTargets t == fromState trans && (satisfies (mapTerm symbol t) $ dConstraint trans) && (trans `elem` (transitions adc))
 
 {-
 languageIsEmpty has to be called like this
@@ -460,7 +445,7 @@ because otherwise the type checker complains about the type variable v to be amb
 For debugging and because its interesting we return the computed b's for each transition in the first
 projection
 -}
-languageIsEmpty' :: (Ord q, Ord t, Eq v) => [UTerm (Term (Transition q t)) v] -> ADC q t -> ([Integer], Bool)
+languageIsEmpty' :: (Ord q, Ord t) => [Term (Transition q t)] -> ADC q t -> ([Integer], Bool)
 languageIsEmpty' ls adc = (map b $ transitions adc, not $ containsAcceptingRun adc $ fix (e adc) ls Map.empty) where
   nAryProd n = sequence . (take n) . repeat
   c = do
@@ -503,11 +488,11 @@ languageIsEmpty' ls adc = (map b $ transitions adc, not $ containsAcceptingRun a
                                  map (r':) $ checkForSequence (b' - 1) e es
   --isRun :: (Ord q, Ord t, Eq v) => ADC q t -> UTerm (Term (Transition q t)) v -> Bool
   --isRun adc' rho = isJust $ run adc' (mapTerm symbol rho) []
-  f ::  (Ord q, Ord t, Eq v) => ADC q t -> [UTerm (Term (Transition q t)) v]
-             -> ([UTerm (Term (Transition q t)) v], Map.Map (UTerm (Term (Transition q t)) v) Bool)
+  f ::  (Ord q, Ord t) => ADC q t -> [Term (Transition q t)]
+             -> ([Term (Transition q t)], Map.Map (Term (Transition q t)) Bool)
              -> Transition q t
-             -> ([UTerm (Term (Transition q t)) v],
-                 Map.Map (UTerm (Term (Transition q t)) v) Bool)
+             -> ([Term (Transition q t)],
+                 Map.Map (Term (Transition q t)) Bool)
   f adc' eStar (es, rhoMap) r = foldl g (es, rhoMap) $ do --f is inner for loop (for all rho and phi_i in E*)
     let m = length $ fromState r
     rhos <- nAryProd m eStar
@@ -533,9 +518,9 @@ languageIsEmpty' ls adc = (map b $ transitions adc, not $ containsAcceptingRun a
     guard $ and vs
     return (rho, Map.insert rho True rhoMap)
   g (es, rhoMap) (rho, rhoMap') = (union es [rho], Map.union rhoMap rhoMap') --g is outer for loop, for all transitions
-  e :: (Ord q, Ord t, Eq v) => ADC q t -> [UTerm (Term (Transition q t)) v] ->
-    Map.Map (UTerm (Term (Transition q t)) v) Bool ->
-    ([UTerm (Term (Transition q t)) v], Map.Map (UTerm (Term (Transition q t)) v) Bool)
+  e :: (Ord q, Ord t) => ADC q t -> [Term (Transition q t)] ->
+    Map.Map (Term (Transition q t)) Bool ->
+    ([Term (Transition q t)], Map.Map (Term (Transition q t)) Bool)
   e adc' eStar rhoMap = foldl (f adc' eStar) ([], Map.empty) $ transitions adc'
   fix f e r | fst (f e r) == e = e
             | containsAcceptingRun adc e = e --we should be able to stop before the fixpoint, if we add an accepting run to eStar
@@ -555,7 +540,7 @@ languageIsEmpty' ls adc = (map b $ transitions adc, not $ containsAcceptingRun a
     Just t' <- return $ termAtPos rho (p' ++ pi')
     return $ t == t'
   isProperPrefixOf p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
-  containsAcceptingRun :: (Ord q, Ord t, Eq v) => ADC q t -> [UTerm (Term (Transition q t)) v] -> Bool
+  containsAcceptingRun :: (Ord q, Ord t) => ADC q t -> [Term (Transition q t)] -> Bool
   containsAcceptingRun adc' eStar = or $ map ((accepts adc') . (mapTerm symbol)) eStar
 
 intersectionIsFin :: (Ord nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> Bool
@@ -563,15 +548,15 @@ intersectionIsFin g r = case eIfIntersectionFin g r of
     Left a -> snd $ languageIsEmpty' ls' a
     Right (n, a) -> snd $ languageIsEmpty' ls a
   where
-  ls :: (Ord nt, Newable nt) => [UTerm (Term (Transition ((nt, (Q0 String IntVar)), Integer) String)) IntVar]
+  ls :: (Ord nt, Newable nt) => [Term (Transition ((nt, (Q0 String IntVar)), Integer) String)]
   ls = []
-  ls' :: (Ord nt, Newable nt) => [UTerm (Term (Transition (nt, (Q0 String IntVar)) String)) IntVar]
+  ls' :: (Ord nt, Newable nt) => [Term (Transition (nt, (Q0 String IntVar)) String)]
   ls' = []
 
 intersectionIsEmpty :: (Ord nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> Bool
 intersectionIsEmpty g r = snd $ languageIsEmpty' ls a where
   a = productADC (constructADC g) (constructNfADC r)
-  ls :: (Ord nt, Newable nt) => [UTerm (Term (Transition ((nt, (Q0 String IntVar))) String)) IntVar]
+  ls :: (Ord nt, Newable nt) => [Term (Transition ((nt, (Q0 String IntVar))) String)]
   ls = []
 
 
@@ -630,7 +615,7 @@ sortTerminals = ["values", "id", "inv", "sortmap", "min", "default", "app"]
 sortNonTerminals = [0..4]
 
 sortGrammar :: TreeGrammar String Int
-sortGrammar = (2, sortNonTerminals, sortTerminals, rules) where
+sortGrammar = TreeGrammar 2 sortNonTerminals sortTerminals rules where
   rules = [
     (4, Terminal "app" [Terminal "app" [Terminal "sortmap" [], NonTerminal 1], NonTerminal 3]),
     (2, Terminal "app" [Terminal "id" [], NonTerminal 2]),
@@ -645,37 +630,41 @@ sortGrammar = (2, sortNonTerminals, sortTerminals, rules) where
     (3, Terminal "values" [])
           ]
 
+
 sortRS :: RS String IntVar
-sortRS = [
+sortRS = RS
+  [("values", 0), ("id", 0), ("inv", 0), ("sortmap", 0), ("min", 0), ("default", 0), ("app", 2)]
+  [
   (
-    app (UTerm $ Symbol "id") (UVar $ IntVar 0),
+    app (UTerm $ SymbolV "id") (UVar $ IntVar 0),
     UVar $ IntVar 0
   ), -- id(x) -> x
   (
-    app (UTerm $ Symbol "inv") (app (UTerm $ Symbol "inv") (UVar $ IntVar 0)),
+    app (UTerm $ SymbolV "inv") (app (UTerm $ SymbolV "inv") (UVar $ IntVar 0)),
     UVar $ IntVar 0
   ), -- inv(inv(x)) -> x
   (
     app
-    (app (UTerm $ Symbol "sortmap") (UVar $ IntVar 0))
-    (app (app (UTerm $ Symbol "sortmap") (UVar $ IntVar 1)) (UVar $ IntVar 2)),
-    app (app (UTerm $ Symbol "sortmap") (UVar $ IntVar 0)) (UVar $ IntVar 2)
-  ), -- sortmap(x, sortmap (y, z)) -> sortmap(x,z)
-  (
-    app (app (UTerm $ Symbol "min") (UTerm $ Symbol "values")) (UTerm $ Symbol "default"),
-    UTerm $ Symbol "default"
-  ) -- min(values, default) -> default !!!we have to give a signature to constructNfADC to cover the case, that the RS just use a subsignature of the grammar!!!
+    (app (UTerm $ SymbolV "sortmap") (UVar $ IntVar 0))
+    (app (app (UTerm $ SymbolV "sortmap") (UVar $ IntVar 1)) (UVar $ IntVar 2)),
+    app (app (UTerm $ SymbolV "sortmap") (UVar $ IntVar 0)) (UVar $ IntVar 2)
+  ) -- sortmap(x, sortmap (y, z)) -> sortmap(x,z)
+  --(
+  --  app (app (UTerm $ SymbolV "min") (UTerm $ SymbolV "values")) (UTerm $ SymbolV "default"),
+  --  UTerm $ SymbolV "default"
+  --) -- min(values, default) -> default !!!we have to give a signature to constructNfADC to cover the case, that the RS just use a subsignature of the grammar!!!
   -- min(min(x,y),y) -> min(x,y)
-         ]
+  ]
 
 -- app (app (min) (default)) (app (app (sortmap) (id)) (values))
 
-app l r = UTerm $ App (UTerm $ App (UTerm $ Symbol "app") (l)) (r)
-sortInhabitant :: UTerm (Term String) IntVar
-sortInhabitant = app (app (UTerm $ Symbol "min") (UTerm $ Symbol "default")) (app (app (UTerm $ Symbol "sortmap") (UTerm $ Symbol "id")) (UTerm $ Symbol "values"))
+app l r = UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "app") (l)) (r)
+app' l r =  App (App (Symbol "app") (l)) (r)
+sortInhabitant :: Term String
+sortInhabitant = app' (app' (Symbol "min") (Symbol "default")) (app' (app' (Symbol "sortmap") (Symbol "id")) (Symbol "values"))
 acc = accepts $ constructADC sortGrammar
 emptyTest = snd $ languageIsEmpty' ls $ constructADC sortGrammar where
-  ls :: [UTerm (Term (Transition Int String)) IntVar]
+  ls :: [Term (Transition Int String)]
   ls = []
 test = acc sortInhabitant == not emptyTest
 
@@ -722,12 +711,12 @@ checkForSequence b' r' es | (fromInteger b') > length es = []
                                  map (r':) $ checkForSequence (b' - 1) e es
 --isRun :: (Ord q, Ord t, Eq v) => ADC q t -> UTerm (Term (Transition q t)) v -> Bool
 --isRun adc' rho = isJust $ run adc' (mapTerm symbol rho) []
-f ::  (Ord q, Ord t, Eq v) => ADC q t -> [UTerm (Term (Transition q t)) v]
-             -> ([UTerm (Term (Transition q t)) v], Map.Map (UTerm (Term (Transition q t)) v) Bool)
+f ::  (Ord q, Ord t) => ADC q t -> [Term (Transition q t)]
+             -> ([Term (Transition q t)], Map.Map (Term (Transition q t)) Bool)
              -> Transition q t
              -> (ADC q t -> [Pos])
-             -> ([UTerm (Term (Transition q t)) v],
-                 Map.Map (UTerm (Term (Transition q t)) v) Bool)
+             -> ([Term (Transition q t)],
+                 Map.Map (Term (Transition q t)) Bool)
 f adc' eStar (es, rhoMap) r c' = foldl g (es, rhoMap) $ do --f is inner for loop (for all rho and phi_i in E*)
     let m = length $ fromState r
     rhos <- nAryProd m eStar
@@ -753,9 +742,9 @@ f adc' eStar (es, rhoMap) r c' = foldl g (es, rhoMap) $ do --f is inner for loop
     guard $ and vs
     return (rho, Map.insert rho True rhoMap)
 g (es, rhoMap) (rho, rhoMap') = (union es [rho], Map.union rhoMap rhoMap') --g is outer for loop, for all transitions
-e :: (Ord q, Ord t, Eq v) => ADC q t -> [UTerm (Term (Transition q t)) v] ->
-    Map.Map (UTerm (Term (Transition q t)) v) Bool ->
-    ([UTerm (Term (Transition q t)) v], Map.Map (UTerm (Term (Transition q t)) v) Bool)
+e :: (Ord q, Ord t) => ADC q t -> [Term (Transition q t)] ->
+    Map.Map (Term (Transition q t)) Bool ->
+    ([Term (Transition q t)], Map.Map (Term (Transition q t)) Bool)
 e adc' eStar rhoMap = foldl (\ a b -> f adc' eStar a b c') ([], Map.empty) $ transitions adc'
 fix' f e r adc  | fst (f e r) == e = e
 --           | containsAcceptingRun adc e = e
@@ -775,7 +764,7 @@ containsCloseEq rho p = or $ do
     Just t' <- return $ termAtPos rho (p' ++ pi')
     return $ t == t'
 isProperPrefixOf p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
-containsAcceptingRun :: (Ord q, Ord t, Eq v) => ADC q t -> [UTerm (Term (Transition q t)) v] -> Bool
+containsAcceptingRun :: (Ord q, Ord t) => ADC q t -> [Term (Transition q t)] -> Bool
 containsAcceptingRun adc' eStar = or $ map ((accepts adc') . (mapTerm symbol)) eStar
 
 

@@ -19,13 +19,16 @@ import Term
 {-
 Rewriting Systems as tuples of terms
 -}
-type RS t v = [(UTerm (Term t) v, UTerm (Term t) v)]
+data RS t v = RS
+  { symbolsOf :: [(t, Int)] --to name the destructor for the signature this way makes refactoring easier
+  , rRules :: [(UTerm (TermV t) v, UTerm (TermV t) v)]
+  }
 
 {-
 symbols returns all symbols of a term.
 We assume that application is left-associative and therefor the "root-symbol" of a term is in the
 "left-most" leaf.
--}
+
 symbolsOf :: Eq t => RS t v -> [(t, Int)]
 symbolsOf [] = []
 symbolsOf ((t, t'):ts) = nub $ findSymbols t ++ findSymbols t' ++ symbolsOf ts {-where
@@ -38,18 +41,18 @@ symbolsOf ((t, t'):ts) = nub $ findSymbols t ++ findSymbols t' ++ symbolsOf ts {
   symbol (UTerm (Symbol f)) = Just f
   symbol (UTerm (App (UTerm (Symbol f)) r)) = Just f
   symbol (UTerm (App l r)) = symbol l-}
-
+-}
 {-
 l is the list of left-hand sides of a rewriting system
 -}
-l :: RS t v -> [UTerm (Term t) v]
-l = map fst
+l :: RS t v -> [UTerm (TermV t) v]
+l = map fst . rRules
 
 {-
 l1 is the subset of linear subterms of l, but is constructed directly from a rewriting system
 -}
-l1 :: (BindingMonad (Term t) v m, Fallible (Term t) v e, MonadTrans em, MonadError e (em m)) =>
-       RS t v -> em m [UTerm (Term t) v]
+l1 :: (BindingMonad (TermV t) v m, Fallible (TermV t) v e, MonadTrans em, MonadError e (em m)) =>
+       RS t v -> em m [UTerm (TermV t) v]
 l1 = return . filter (isLinear) . l
 
 {-
@@ -57,8 +60,8 @@ l2 is the linearization of the non-linear terms in l, constructed directly from 
 l2 returns pairs (non-linearized terms, linearized term), such that we have the non-linearized terms
 available for the computation of the transition relation of the ADC.
 -}
-l2 :: (BindingMonad (Term t) v m, Fallible (Term t) v e, MonadTrans em, MonadError e (em m)) =>
-       RS t v -> em m [(UTerm (Term t) v, UTerm (Term t) v)] --[UTerm (Term t) v]
+l2 :: (BindingMonad (TermV t) v m, Fallible (TermV t) v e, MonadTrans em, MonadError e (em m)) =>
+       RS t v -> em m [(UTerm (TermV t) v, UTerm (TermV t) v)] --[UTerm (Term t) v]
 l2 x = do --(return $ filter (not . isLinear) $ l x) >>= nubByTerms >>= mapM linearize
   nlins <- (return $ filter (not . isLinear) $ l x) >>= nubByTerms
   lins <- return nlins >>=  mapM linearize
