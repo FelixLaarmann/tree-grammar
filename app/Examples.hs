@@ -134,6 +134,26 @@ sortRS = RS
   -- min(min(x,y),y) -> min(x,y)
   ]
 
+sortRS' :: RS String IntVar
+sortRS' = RS
+  [("values", 0), ("id", 0), ("inv", 0), ("sortmap", 0), ("default", 0), ("app", 2)]
+  [
+  (
+    app (UTerm $ SymbolV "id") (UVar $ IntVar 0),
+    UVar $ IntVar 0
+  ), -- id(x) -> x
+  (
+    app (UTerm $ SymbolV "inv") (app (UTerm $ SymbolV "inv") (UVar $ IntVar 0)),
+    UVar $ IntVar 0
+  ), -- inv(inv(x)) -> x
+  (
+    app
+    (app (UTerm $ SymbolV "sortmap") (UVar $ IntVar 0))
+    (app (app (UTerm $ SymbolV "sortmap") (UVar $ IntVar 1)) (UVar $ IntVar 2)),
+    app (app (UTerm $ SymbolV "sortmap") (UVar $ IntVar 0)) (UVar $ IntVar 2)
+  )
+  ]
+
 -- app (app (min) (default)) (app (app (sortmap) (id)) (values))
 
 app l r = UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "app") (l)) (r)

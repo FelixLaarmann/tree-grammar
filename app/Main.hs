@@ -13,7 +13,11 @@ import qualified Data.Map as Map
 main :: IO ()
 main = do
   --prettyPrintADC $ constructNfADC exampleRS
-  print $ intersectionIsFin sortGrammar sortRS
+  putStrLn "finiteness check works on so many transitions:"
+  putStrLn ""
+  print $ either (const 0) (\x -> length $ transitions $ snd x) $ eIfIntersectionFin sortGrammar sortRS
+  putStrLn ""
+  --print $ intersectionIsEmpty sortGrammar sortRS'
   --print $ accepts inter sortInhabitant
   --print $ length $  fst $ e inter (fst d') (snd d')
   --print $ length $ fst d'
@@ -21,7 +25,7 @@ main = do
   --print $ containsAcceptingRun inter (fst d')
   --print $ sortInhabitant
 
---inter = productADC (constructADC sortGrammar) (constructNfADC sortRS)
+inter = productADC (constructADC sortGrammar) (constructNfADC sortRS)
 --a = e inter ls Map.empty
 --b' = e inter (fst a) (snd a)
 --c'' = e inter (fst b') (snd b')

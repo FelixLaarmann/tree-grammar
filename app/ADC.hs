@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
@@ -369,7 +370,7 @@ intersectSymbols :: Eq t => RS t v -> TreeGrammar t nt -> [(t, Int)]
 intersectSymbols rs gr = intersect (terminalsWithArity gr) (symbolsOf rs)
 
 heightADC :: Eq t => Integer -> [(t, Int)] -> ADC Integer t
-heightADC n ts = ADC (-1 : [0..n]) [n] trans where
+heightADC n ts = ADC [0..n] [n] trans where
   trans = map (\a -> Transition a [] 0 []) nullaryTs ++
     [Transition f args (min (1 + maximum (0 : args)) n) [] |
      (ls, n') <- nArySymbols, f <- ls, args <- nAryProd n' [0..n]]
@@ -552,7 +553,7 @@ languageIsEmpty' adc = (map b $ transitions adc, not $ containsAcceptingRun adc 
   containsAcceptingRun adc' eStar = or $ map ((accepts adc') . (fmap symbol)) eStar
 
 languageIsEmpty :: (Ord q, Ord t) => ADC q t -> ([Integer], Bool)
-languageIsEmpty adc = (map b $ transitions adc, not $ fix (e adc) Map.empty Map.empty) where
+languageIsEmpty !adc = (map b $ transitions adc, not $ fix (e adc) Map.empty Map.empty) where
   c = do
     r <- transitions adc
     pi <- (nub $ join $ dConstraint r) >>= \(a,b) -> [a,b]
