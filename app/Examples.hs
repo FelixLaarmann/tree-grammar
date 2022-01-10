@@ -20,7 +20,7 @@ import RS
 import ADC
 import Grammar
 
-{-
+
 {-
 Example from Lukasz slides (Pres01, slide 21)
 x -> 0
@@ -32,49 +32,13 @@ f(g(x,a), g(b,y)) -> c
 -}
 
 exampleRS :: RS String IntVar
-exampleRS = [(UTerm $ App (UTerm (App (UTerm $ Symbol "f") (UVar $ IntVar 0))) (UVar $ IntVar 0),
-              UTerm $ Symbol "a"),
-             (UTerm $ App (UTerm $ App (UTerm $ Symbol "f") (UTerm $ App (UTerm $ App (UTerm $ Symbol "g") (UVar $ IntVar 0)) (UTerm $ Symbol "a"))) (UTerm $ App (UTerm $ App (UTerm $ Symbol "g") (UTerm $ Symbol "b")) (UVar $ IntVar 1)),
-              UTerm $ Symbol "c")]
+exampleRS = RS
+  [("f", 2), ("g", 2), ("a", 0), ("b", 0), ("c", 0)]
+  [(UTerm $ AppV (UTerm (AppV (UTerm $ SymbolV "f") (UVar $ IntVar 0))) (UVar $ IntVar 0),
+              UTerm $ SymbolV "a"),
+             (UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "f") (UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "g") (UVar $ IntVar 0)) (UTerm $ SymbolV "a"))) (UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "g") (UTerm $ SymbolV "b")) (UVar $ IntVar 1)),
+              UTerm $ SymbolV "c")]
 
-
-{-
-Example for testing
-f(x,x) -> a
-f(g(x,a), g(b,y)) -> c
-h(f(x,y), f(b, g(x,a))) -> d
-h(g(a,x), g(x,x)) -> c
--}
-testRS :: RS String IntVar
-testRS = [(UTerm $ App (UTerm (App (UTerm $ Symbol "f") (UVar $ IntVar 0))) (UVar $ IntVar 0),
-              UTerm $ Symbol "a"),
-             (UTerm $ App (UTerm $ App (UTerm $ Symbol "f") (UTerm $ App (UTerm $ App (UTerm $ Symbol "g") (UVar $ IntVar 0)) (UTerm $ Symbol "a"))) (UTerm $ App (UTerm $ App (UTerm $ Symbol "g") (UTerm $ Symbol "b")) (UVar $ IntVar 1)),
-              UTerm $ Symbol "c"),
-             (UTerm $ App (UTerm $ App (UTerm $ Symbol "h") (UTerm $ App (UTerm $ App (UTerm $ Symbol "f") (UVar $ IntVar 0)) (UVar $ IntVar 1))) (UTerm $ App (UTerm $ App (UTerm $ Symbol "f") (UTerm $ Symbol "b")) (UTerm $ App (UTerm $ App (UTerm $ Symbol "g") (UVar $ IntVar 0)) (UTerm $ Symbol "a"))),
-              UTerm $ Symbol "d"),
-             (UTerm $ App (UTerm $ App (UTerm $ Symbol "h") (UTerm $ App (UTerm $ App (UTerm $ Symbol "g") (UTerm $ Symbol "a")) (UVar $ IntVar 0))) (UTerm $ App (UTerm $ App (UTerm $ Symbol "g") (UVar $ IntVar 0)) (UVar $ IntVar 0)),
-              UTerm $ Symbol "c")]
-
-{-
-Example for second guard in deltaR'
--}
-nextExample :: RS String IntVar
-nextExample = [(UTerm $ App (UTerm (App (UTerm $ Symbol "f") (UVar $ IntVar 0))) (UVar $ IntVar 0),
-              UTerm $ Symbol "a"),
-             (UTerm $ App (UTerm $ App (UTerm $ Symbol "f") (UTerm $ App (UTerm $ Symbol "g") (UVar $ IntVar 0))) (UTerm $ App (UTerm $ Symbol "g") (UVar $ IntVar 0)),
-              UTerm $ Symbol "b")]
-
-{-
-normalized regular tree grammar
--}
-natListGrammar :: TreeGrammar String Int
-natListGrammar = TreeGrammar 0 [0,1] ["nil", "cons", "0", "s"] rules where
-  rules = [
-    (0, Terminal "nil" []),
-    (0, Terminal "cons" [NonTerminal 1, NonTerminal 0]),
-    (1, Terminal "0" []),
-    (1, Terminal "s" [NonTerminal 1])
-          ]
 
 {-
 regular tree grammar
@@ -89,19 +53,18 @@ natListGrammar' = TreeGrammar 0 [0,1] ["nil", "cons", "0", "s"] rules where
     (1, NonTerminal 1)
           ]
 
-natListRS :: RS String IntVar
-natListRS = [
-  --(UTerm $ App (UTerm $ App (UTerm $ Symbol "++") (UTerm $ Symbol "nil")) (UVar $ IntVar 0),
-  --UVar $ IntVar 0),
-  --(UTerm $ App (UTerm $ App (UTerm $ Symbol "++") (UVar $ IntVar 0)) (UTerm $ Symbol "nil"),
-  --UVar $ IntVar 0),
-  (UTerm $ App (UTerm $ App (UTerm $ Symbol "mult") (UTerm $ Symbol "0")) (UVar $ IntVar 0),
-  UTerm $ Symbol "0"),
-  (UTerm $ App (UTerm $ App (UTerm $ Symbol "mult") (UVar $ IntVar 0)) (UTerm $ Symbol "0"),
-  UTerm $ Symbol "0")
-            ]
+{-
+normalized regular tree grammar
+-}
+natListGrammar :: TreeGrammar String Int
+natListGrammar = TreeGrammar 0 [0,1] ["nil", "cons", "0", "s"] rules where
+  rules = [
+    (0, Terminal "nil" []),
+    (0, Terminal "cons" [NonTerminal 1, NonTerminal 0]),
+    (1, Terminal "0" []),
+    (1, Terminal "s" [NonTerminal 1])
+          ]
 
-t = UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UTerm $ App (UTerm $ Symbol "s") (UTerm $ Symbol "0"))) (UTerm $ App (UTerm $ App (UTerm $ Symbol "cons") (UTerm $ Symbol "0")) (UTerm $ Symbol "nil"))
 
 {-
 Examples from
@@ -111,10 +74,9 @@ Synthesis and Satisfiability Modulo Theories
 "
 paper.
 -}
-
 {-
 sort Example
-
+-}
 
 sortTerminals = ["values", "id", "inv", "sortmap", "min", "default", "app"]
 
@@ -125,10 +87,11 @@ sortTerminals = ["values", "id", "inv", "sortmap", "min", "default", "app"]
 3 := List(double)
 4 := SortedList(double)
 -}
+
 sortNonTerminals = [0..4]
 
 sortGrammar :: TreeGrammar String Int
-sortGrammar = (2, sortNonTerminals, sortTerminals, rules) where
+sortGrammar = TreeGrammar 2 sortNonTerminals sortTerminals rules where
   rules = [
     (4, Terminal "app" [Terminal "app" [Terminal "sortmap" [], NonTerminal 1], NonTerminal 3]),
     (2, Terminal "app" [Terminal "id" [], NonTerminal 2]),
@@ -143,44 +106,38 @@ sortGrammar = (2, sortNonTerminals, sortTerminals, rules) where
     (3, Terminal "values" [])
           ]
 
-{- !!!!!!Has to be updated as well!!!!!!!!! -}
 
 sortRS :: RS String IntVar
-sortRS = [
+sortRS = RS
+  [("values", 0), ("id", 0), ("inv", 0), ("sortmap", 0), ("min", 0), ("default", 0), ("app", 2)]
+  [
   (
-    app (UTerm $ Symbol "id") (UVar $ IntVar 0),
+    app (UTerm $ SymbolV "id") (UVar $ IntVar 0),
     UVar $ IntVar 0
   ), -- id(x) -> x
   (
-    app (UTerm $ Symbol "inv") (app (UTerm $ Symbol "inv") (UVar $ IntVar 0)),
+    app (UTerm $ SymbolV "inv") (app (UTerm $ SymbolV "inv") (UVar $ IntVar 0)),
     UVar $ IntVar 0
   ), -- inv(inv(x)) -> x
   (
     app
-    (app (UTerm $ Symbol "sortmap") (UVar $ IntVar 0))
-    (app (app (UTerm $ Symbol "sortmap") (UVar $ IntVar 1)) (UVar $ IntVar 2)),
-    app (app (UTerm $ Symbol "sortmap") (UVar $ IntVar 0)) (UVar $ IntVar 2)
+    (app (UTerm $ SymbolV "sortmap") (UVar $ IntVar 0))
+    (app (app (UTerm $ SymbolV "sortmap") (UVar $ IntVar 1)) (UVar $ IntVar 2)),
+    app (app (UTerm $ SymbolV "sortmap") (UVar $ IntVar 0)) (UVar $ IntVar 2)
   ), -- sortmap(x, sortmap (y, z)) -> sortmap(x,z)
   (
-    app (app (UTerm $ Symbol "min") (UTerm $ Symbol "values")) (UTerm $ Symbol "default"),
-    UTerm $ Symbol "default"
-  ) -- min(values, default) -> default !!!we have to give a signature to constructNfADC to cover the case, that the RS just use a subsignature of the grammar!!!
+    app
+    (app (UTerm $ SymbolV "min") ((app (app (UTerm $ SymbolV "min") (UVar $ IntVar 0)) (UVar $ IntVar 1))))
+    (UVar $ IntVar 1),
+    app (app (UTerm $ SymbolV "min") (UVar $ IntVar 0)) (UVar $ IntVar 1)
+  )
   -- min(min(x,y),y) -> min(x,y)
-         ]
-
+  ]
 
 -- app (app (min) (default)) (app (app (sortmap) (id)) (values))
-app l r = UTerm $ App (UTerm $ App (UTerm $ Symbol "app") (l)) (r)
 
-sortInhabitant :: UTerm (Term String) IntVar
-sortInhabitant = app (app (UTerm $ Symbol "min") (UTerm $ Symbol "default")) (app (app (UTerm $ Symbol "sortmap") (UTerm $ Symbol "id")) (UTerm $ Symbol "values"))
+app l r = UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "app") (l)) (r)
+app' l r =  App (App (Symbol "app") (l)) (r)
+sortInhabitant :: Term String
+sortInhabitant = app' (app' (Symbol "min") (Symbol "default")) (app' (app' (Symbol "sortmap") (Symbol "id")) (Symbol "values"))
 
-acc = accepts $ constructADC sortGrammar
-emptyTest = snd $ languageIsEmpty' ls $ constructADC sortGrammar where
-  ls :: [UTerm (Term (Transition Int String)) IntVar]
-  ls = []
-test = acc sortInhabitant == not emptyTest
-
--}
-
--}
