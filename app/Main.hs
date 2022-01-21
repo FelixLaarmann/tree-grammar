@@ -13,9 +13,9 @@ import qualified Data.Map as Map
 main :: IO ()
 main = do
   --prettyPrintADC $ constructNfADC exampleRS
-  putStrLn "finiteness check works on so many transitions:"
+  putStrLn "Intersection of sortGrammar and sortRS is finite:"
   putStrLn ""
-  print $ either (const 0) (\x -> length $ transitions $ snd x) $ eIfIntersectionFin sortGrammar sortRS
+  print $ snd $ languageIsFin inter
   putStrLn ""
   --print $ intersectionIsEmpty sortGrammar sortRS'
   --print $ accepts inter sortInhabitant

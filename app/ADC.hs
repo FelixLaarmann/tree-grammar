@@ -562,28 +562,35 @@ languageIsEmpty !adc = (map b $ transitions adc, not $ fix (e adc) Map.empty Map
     return suf
   n = fromIntegral $ length $ do -- n(A′) is the number of distinct atomic constraints in the rules of A′
     r <- transitions adc
-    (nub $ join $ dConstraint r)
+    (modSym $ nub $ join $ dConstraint r) 
   --d(A′) is the maximum length of |π| or |π′| in an atomic constraint π̸=π′ in a (!!!) rule of A′
   d r = maximum $ 0 : do 
     --r <- transitions adc
     pi <- (nub $ join $ dConstraint r) >>= \(a,b) -> [a,b]
     return $ length pi
-  --alpha :: Double
-  --alpha = 4 * 2.71828182845 + 2
-  gamma = 331.4348136746072 --2 * alpha^2 
-  --beta = (log 2 + 1) / (log 2)
-  delta = 11.770780163555855 --4 * beta + 2 
-  b r = let sizeQ = toInteger $ length $ states adc in
-    let d' = fromIntegral $ d r in
-      if d' == 0
-      then
-        max
-        (floor $  gamma * (fromIntegral $ sizeQ^2))
-        (sizeQ * (toInteger $ length $ nub $ map symbol $ transitions adc))
-      else
-        max
-        (floor $  gamma * (fromIntegral $ sizeQ^2) * (2^(round $ delta * d' * n * (log $ 2 * d' * n))))
-        (sizeQ * (toInteger $ length $ nub $ map symbol $ transitions adc))
+  --s(A)is the number of distinct suffixes of positions π,π′ in an atomic constraint π̸=π′ in a (!!!) rule of A
+  suffixes [] = []
+  suffixes (_:xs) = go xs
+    where go [] = [] : []
+          go f@(_:t) = f: go t
+  s r = length $ do
+    atom <- (modSym $ nub $ join $ dConstraint r) --distinct atomic constraints
+    let pi = fst atom
+    let pi' = snd atom
+    nub $ (suffixes pi) ++ (suffixes pi') --for proper suffixes
+    --nub $ (pi : suffixes pi) ++ (pi' : suffixes pi') --for suffixes
+  sizeQ :: Double
+  sizeQ = fromIntegral $ length $ states adc
+  euler :: Double
+  euler = 2.71828182845
+  fac i = product [1..i]
+  delta r = let s' = s r in sizeQ * 2^s' * (fromIntegral $ fac s')
+  beta r = (fromIntegral $ 1 + d r) * n * (1.0 + euler * (delta r))
+  gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n * euler) * (d' + 1) * n * (delta r)
+  k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
+  b r = max
+        ((floor $ beta r) * (k r) * (floor $ gamma r))
+        ((floor $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
   checkForSequence 1 r' es = [[r', e] | e <- es, r' >>> e]
   checkForSequence b' r' es | (fromInteger b') > length es = [] 
                             | otherwise = do
@@ -604,7 +611,8 @@ languageIsEmpty !adc = (map b $ transitions adc, not $ fix (e adc) Map.empty Map
           return $ rhoIs
     guard $ length rhos == m
     let rho = treeToTerm r rhos --for each rule build all terms over delta
-    --guard $ isRun adc' rho --this is true by construction of rhos
+    --guard $ isRun adc' rho --this is true by construction of rhos for weak runs.
+    guard $ satisfies rho $ dConstraint r --But we still need to check, whether the constraints are satisfied.
     guard $ (Map.lookup rho rhoMap) /= Just True --and test, whether we have analysed rho before
     --we use a Data.Map instead of a Data.Set here, because Data.Set is limited to maxInt and the chance to exceed this bound definitely exists
     let vs = do
@@ -634,6 +642,114 @@ languageIsEmpty !adc = (map b $ transitions adc, not $ fix (e adc) Map.empty Map
   fix f e r | (\(x, _, _) -> x) (f e r) = True --if e already contains an accepting run, return true
             | (\(_, x, _) -> x) (f e r) == e = False --if fixpoint is reached, but no accepting run found, return False
             | otherwise = fix f ((\(_, x, _) -> x) $ f e r) ((\(_, _, y) -> y) $ f e r)
+  containsCloseEq rho p = or $ do
+    let posRho = pos rho
+    p' <- posRho 
+    guard $ p' `isPrefixOf` p --is this the right implementation for p' <= p????
+    Just s <- return $ symbolAtPos rho p'
+    let pis = (nub $ join $ dConstraint s) >>= \(a,b) -> [a,b]
+    pi <- pis
+    pi' <- pis
+    guard $ (p' ++ pi) `elem` posRho
+    guard $ (p' ++ pi') `elem` posRho
+    guard $ p' `isProperPrefixOf` pi || p' `isProperPrefixOf` pi' --is this the right implementation for p' < p????
+    Just t <- return $ termAtPos rho (p' ++ pi)
+    Just t' <- return $ termAtPos rho (p' ++ pi')
+    return $ t == t'
+  isProperPrefixOf p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
+
+languageIsFin :: (Ord q, Ord t) => ADC q t -> ([Integer], Bool)
+languageIsFin !adc = (map b $ transitions adc, not $ fix (e adc) 0 Map.empty Map.empty) where
+  fac i = product [1..i]
+  h :: Integer
+  h = div (371828182845 * (toInteger $ length $ states adc) *
+           (2^(toInteger $ c adc)) * (fac $ toInteger $ c adc) * (toInteger $ pi adc)) 100000000000
+  c' = do
+    r <- transitions adc
+    pi <- (nub $ join $ dConstraint r) >>= \(a,b) -> [a,b]
+    suf <- filter (/= []) $ subsequences pi
+    guard $ suf `isSuffixOf` pi
+    return suf
+  n = fromIntegral $ length $ do -- n(A′) is the number of distinct atomic constraints in the rules of A′
+    r <- transitions adc
+    (nub $ join $ dConstraint r)
+  --d(A′) is the maximum length of |π| or |π′| in an atomic constraint π̸=π′ in a (!!!) rule of A′
+  d r = maximum $ 0 : do 
+    --r <- transitions adc
+    pi <- (nub $ join $ dConstraint r) >>= \(a,b) -> [a,b]
+    return $ length pi
+  suffixes [] = []
+  suffixes (_:xs) = go xs
+    where go [] = [] : []
+          go f@(_:t) = f: go t
+  s r = length $ do
+    atom <- (modSym $ nub $ join $ dConstraint r) --distinct atomic constraints
+    let pi = fst atom
+    let pi' = snd atom
+    nub $ (suffixes pi) ++ (suffixes pi') --for proper suffixes
+    --nub $ (pi : suffixes pi) ++ (pi' : suffixes pi') --for suffixes
+  sizeQ :: Double
+  sizeQ = fromIntegral $ length $ states adc
+  euler :: Double
+  euler = 2.71828182845
+  delta r = let s' = s r in sizeQ * 2^s' * (fromIntegral $ fac s')
+  beta r = (fromIntegral $ 1 + d r) * n * (1.0 + euler * (delta r))
+  gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n * euler) * (d' + 1) * n * (delta r)
+  k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
+  b r = max
+        ((floor $ beta r) * (k r) * (floor $ gamma r))
+        ((floor $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
+  checkForSequence 1 r' es = [[r', e] | e <- es, r' >>> e]
+  checkForSequence b' r' es | (fromInteger b') > length es = [] 
+                            | otherwise = do
+                                 e <- es
+                                 guard $ r' >>> e
+                                 map (r':) $ checkForSequence (b' - 1) e es
+  f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q [Term (Transition q t)]
+             -> (Bool, Map.Map q [Term (Transition q t)], Map.Map (Term (Transition q t)) Bool)
+             -> Transition q t
+             -> (Bool, Map.Map q [Term (Transition q t)],
+                 Map.Map (Term (Transition q t)) Bool)
+  f i adc' eStar (stop, es, rhoMap) r = foldl g (stop, es, rhoMap) $ do --f is inner for loop (for all rho and phi_i in E*)
+    let dom = fromState r
+    let m = length $ dom
+    rhos <- sequence $ do
+          qI <- dom
+          Just rhoIs <- return $ Map.lookup qI eStar
+          return $ rhoIs
+    guard $ length rhos == m
+    let rho = treeToTerm r rhos --for each rule build all terms over delta
+    --guard $ isRun adc' rho --this is true by construction of rhos
+    guard $ satisfies rho $ dConstraint r --But we still need to check, whether the constraints are satisfied.
+    guard $ (Map.lookup rho rhoMap) /= Just True --and test, whether we have analysed rho before
+    --we use a Data.Map instead of a Data.Set here, because Data.Set is limited to maxInt and the chance to exceed this bound definitely exists
+    let vs = do
+          p <- (pos rho)
+          guard $ not $ p `elem` c'
+          guard $ (length p) <= ((d r) + 1)
+          Just s <- return $ symbolAtPos rho p --s is a transition, because rho is a term over delta
+          Just rhos' <- return $ Map.lookup (target s) eStar
+          Just rhoP <- return $ termAtPos rho p
+          let seqs = checkForSequence (b r) rhoP rhos' --rhos' should be nubbed by construction, because of guard $ (Map.lookup rho rhoMap) /= Just True 
+          guard $ not $ null seqs
+          let rho' = head seqs
+          --guard $ checkDescending rhoP rho'
+          Just eqCheck <- return $ sequence $ map (\t -> substituteAtPos rho t p) rho'
+          return $ and $ map (\t -> not $ containsCloseEq t p) eqCheck
+    guard $ and vs
+    let trgt = target r
+    let stop' = trgt `elem` (final adc') && i > h
+    case Map.lookup trgt eStar of
+      Just trgts -> return (stop', Map.singleton trgt (rho:trgts), Map.insert rho True rhoMap)
+      Nothing -> return (stop, Map.singleton trgt [rho], Map.insert rho True rhoMap)
+  g (stop, es, rhoMap) (stop', rho, rhoMap') = (stop || stop', Map.union es rho, Map.union rhoMap rhoMap') --g is outer for loop, for all transitions
+  e :: (Ord q, Ord t) => ADC q t -> Integer -> Map.Map q [Term (Transition q t)] ->
+    Map.Map (Term (Transition q t)) Bool ->
+    (Bool, Map.Map q [Term (Transition q t)], Map.Map (Term (Transition q t)) Bool)
+  e adc' i eStar rhoMap = foldl (f i adc' eStar) (False, Map.empty, Map.empty) $ transitions adc'
+  fix f i e r | (\(x, _, _) -> x) (f i e r) = True --if e already contains an accepting run, return true
+              | (\(_, x, _) -> x) (f i e r) == e = False --if fixpoint is reached, but no accepting run found, return False
+            | otherwise = fix f (i+1) ((\(_, x, _) -> x) $ f i e r) ((\(_, _, y) -> y) $ f i e r)
   containsCloseEq rho p = or $ do
     let posRho = pos rho
     p' <- posRho 
