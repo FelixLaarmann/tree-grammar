@@ -22,7 +22,7 @@ Rewriting Systems as tuples of terms
 data RS t v = RS
   { symbolsOf :: [(t, Int)] --to name the destructor for the signature this way makes refactoring easier
   , rRules :: [(UTerm (TermV t) v, UTerm (TermV t) v)]
-  }
+  } deriving Show
 
 {-
 symbols returns all symbols of a term.

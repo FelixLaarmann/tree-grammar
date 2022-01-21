@@ -161,3 +161,58 @@ app' l r =  App (App (Symbol "app") (l)) (r)
 sortInhabitant :: Term String
 sortInhabitant = app' (app' (Symbol "min") (Symbol "default")) (app' (app' (Symbol "sortmap") (Symbol "id")) (Symbol "values"))
 
+{-
+Boolean algebra example
+-}
+
+boolTerminals = ["T", "F", "AND"]
+
+boolNonTerminals = [0]
+
+boolGrammar :: TreeGrammar String Int
+boolGrammar = TreeGrammar 0 boolNonTerminals boolTerminals rules where
+  rules = [
+    (0, Terminal "T" []),
+    (0, Terminal "F" []),
+    (0, Terminal "AND" [NonTerminal 0, NonTerminal 0])
+          ]
+
+boolRS :: RS String IntVar
+boolRS = RS
+  [("T", 0), ("F", 0), ("AND", 2)]
+  [
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "F")) (UTerm $ SymbolV "F"),
+      UTerm $ SymbolV "F"
+    ),
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "F")) (UTerm $ SymbolV "T"),
+      UTerm $ SymbolV "F"
+    ),
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "T")) (UTerm $ SymbolV "F"),
+      UTerm $ SymbolV "F"
+    ),
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "T")) (UTerm $ SymbolV "T"),
+      UTerm $ SymbolV "T"
+    )
+  ]
+
+boolRS' :: RS String IntVar
+boolRS' = RS
+  [("T", 0), ("F", 0), ("AND", 2)]
+  [
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "F")) (UVar $ IntVar 0),
+      UTerm $ SymbolV "F"
+    ),
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UVar $ IntVar 0)) (UTerm $ SymbolV "F"),
+      UTerm $ SymbolV "F"
+    ),
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UVar $ IntVar 0)) (UVar $ IntVar 0),
+      UVar $ IntVar 0
+    )
+  ] 

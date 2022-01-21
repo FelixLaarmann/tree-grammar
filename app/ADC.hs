@@ -19,6 +19,7 @@ import Data.Either
 import Prelude hiding (pi)
 import qualified Data.MultiSet as MultiSet
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 import Term
 import RS
@@ -138,7 +139,7 @@ modSym ((a,b):ls) = (a,b) : (modSym $ filter (/= (b,a)) ls)
 atoms returns the list of all distinct disequalities from the transitions of an ADC.
 -}
 atoms :: ADC q t -> [(Pos, Pos)]
-atoms = nub . join . join . (map dConstraint) . transitions
+atoms = modSym . nub . join . join . (map dConstraint) . transitions
 
 {-
 c(ADC) computes the number of all distinct triples (β,π,π′) such that β is a prefix of
@@ -252,6 +253,7 @@ f(q_u_1,...,q_u_n)-c−> q_u where q_u_1,...,q_u_n, q_u ∈ Qr and:
     (ls, n) <- nArySymbols
     s <- ls
     args <- fromStates n
+    guard $ null $ instanceOfSome (treeToTermV s args) l1s
     case (evalFBM $ mgu $
           instanceOfSome (treeToTermV s args) q0without) of
       Right u -> do
@@ -417,7 +419,7 @@ eIfIntersectionFin g r = if n == 0 then Left a else Right (n, productADC a (heig
   a = productADC (constructADC g) (constructNfADC r)
   f = intersectSymbols r g
   --rs = sizeR r
-  fac i = product [1..i] --http://www.willamette.edu/~fruehr/haskell/evolution.html
+  --fac i = product [1..i] --http://www.willamette.edu/~fruehr/haskell/evolution.html
   n = div (371828182845 * (toInteger $ length $ states a) *
            (2^(toInteger $ c a)) * (fac $ toInteger $ c a) * (toInteger $ pi a)) 100000000000
   --n = div (371828182845 * (sizeG g) * (2^(rs^3 + rs + 2)) * (fac $ rs^3) * rs) 100000000000
@@ -446,37 +448,47 @@ isRun :: (Eq t, Eq q) => ADC q t -> Term (Transition q t) -> Bool
 isRun adc t = let trans = root t in
   childTargets t == fromState trans && (satisfies (fmap symbol t) $ dConstraint trans) && (trans `elem` (transitions adc))
 
-{-
-languageIsEmpty has to be called like this
-languageIsEmpty = languageIsEmpty' []
-because otherwise the type checker complains about the type variable v to be ambiguous :(
-
-For debugging and because its interesting we return the computed b's for each transition in the first
-projection
--}
-languageIsEmpty' :: (Ord q, Ord t) => ADC q t -> ([Integer], Bool)
-languageIsEmpty' adc = (map b $ transitions adc, not $ containsAcceptingRun adc $ fix (e adc) [] Map.empty) where
-  nAryProd n = sequence . (take n) . repeat
-  c = do
+--c' is the set of suffixes of positions π,π′ in atomic constraints of transition rules in ∆
+c' :: ADC q t -> [Pos]
+c' adc = do --TODO c' can be optimized similar to s
     r <- transitions adc
     pi <- (nub $ join $ dConstraint r) >>= \(a,b) -> [a,b]
     suf <- filter (/= []) $ subsequences pi
     guard $ suf `isSuffixOf` pi
     return suf
-  n = fromIntegral $ length $ do -- n(A′) is the number of distinct atomic constraints in the rules of A′
-    r <- transitions adc
-    (nub $ join $ dConstraint r)
-  --d(A′) is the maximum length of |π| or |π′| in an atomic constraint π̸=π′ in a (!!!) rule of A′
-  d r = maximum $ 0 : do 
+
+--s(A)is the number of distinct suffixes of positions π,π′ in an atomic constraint π̸=π′ in a (!!!) rule of A
+s :: Transition q t -> Int
+s r = length $ do
+    atom <- (modSym $ nub $ join $ dConstraint r) --distinct atomic constraints
+    let pi = fst atom
+    let pi' = snd atom
+    --nub $ (suffixes pi) ++ (suffixes pi') --for proper suffixes
+    nub $ (pi : suffixes pi) ++ (pi' : suffixes pi') --for suffixes
+    where
+      suffixes [] = []
+      suffixes (_:xs) = go xs
+        where go [] = [] : []
+              go f@(_:t) = f: go t
+-- n(A′) is the number of distinct atomic constraints in the rules of A′
+n :: ADC q t -> Double
+n adc = fromIntegral $ length $ atoms adc --do 
     --r <- transitions adc
+    --(nub $ join $ dConstraint r)
+--d(A′) is the maximum length of |π| or |π′| in an atomic constraint π̸=π′ in a (!!!) rule of A′
+d :: Transition q t -> Int
+d r = maximum $ 0 : do 
     pi <- (nub $ join $ dConstraint r) >>= \(a,b) -> [a,b]
     return $ length pi
-  --alpha :: Double
-  --alpha = 4 * 2.71828182845 + 2
-  gamma = 331.4348136746072 --2 * alpha^2 
-  --beta = (log 2 + 1) / (log 2)
-  delta = 11.770780163555855 --4 * beta + 2 
-  b r = let sizeQ = toInteger $ length $ states adc in
+
+h :: ADC q t -> Integer
+h adc = div (371828182845 * (toInteger $ length $ states adc) *
+           (2^(toInteger $ c adc)) * (fac $ toInteger $ c adc) * (1 + (toInteger $ pi adc))) 100000000000
+
+fac i = product [1..i]
+
+oldB :: Eq t => ADC q t -> Transition q t -> Integer
+oldB adc r = let sizeQ = toInteger $ length $ states adc in
     let d' = fromIntegral $ d r in
       if d' == 0
       then
@@ -485,10 +497,39 @@ languageIsEmpty' adc = (map b $ transitions adc, not $ containsAcceptingRun adc 
         (sizeQ * (toInteger $ length $ nub $ map symbol $ transitions adc))
       else
         max
-        (floor $  gamma * (fromIntegral $ sizeQ^2) * (2^(round $ delta * d' * n * (log $ 2 * d' * n))))
+        (floor $  gamma * (fromIntegral $ sizeQ^2) * (2^(round $ delta * d' * (n adc) * (log $ 2 * d' * (n adc)))))
         (sizeQ * (toInteger $ length $ nub $ map symbol $ transitions adc))
-  --checkDescending t [] = True
-  --checkDescending t (t' : ts) = t >>> t' && checkDescending t' ts
+        where
+          gamma = 331.4348136746072
+          delta = 11.770780163555855
+
+newB :: Eq t => ADC q t -> Transition q t -> Integer
+newB adc r =
+  max
+  ((floor $ beta r) * (k r) * (floor $ gamma r))
+  ((floor $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
+  where
+    sizeQ :: Double
+    sizeQ = fromIntegral $ length $ states adc
+    euler :: Double
+    euler = 2.71828182845
+    --fac i = product [1..i]
+    delta r = let s' = s r in sizeQ * 2^s' * (fromIntegral $ fac s')
+    beta r = (fromIntegral $ 1 + d r) * (n adc) * (1.0 + euler * (delta r))
+    gamma r = let d' = fromIntegral $ d r in let n' = n adc in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
+    k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
+
+{-
+languageIsEmpty has to be called like this
+languageIsEmpty = languageIsEmpty' []
+because otherwise the type checker complains about the type variable v to be ambiguous :(
+
+For debugging and because its interesting we return the computed b's for each transition in the first
+projection
+-}
+languageIsEmpty' :: (Ord q, Ord t) => ADC q t -> Bool
+languageIsEmpty' adc = not $ containsAcceptingRun adc $ fix (e adc) [] Map.empty where
+  nAryProd n = sequence . (take n) . repeat
   checkForSequence 1 r' es = [[r', e] | e <- es, r' >>> e]
   checkForSequence b' r' es | (fromInteger b') > length es = [] 
                             | otherwise = do
@@ -511,14 +552,14 @@ languageIsEmpty' adc = (map b $ transitions adc, not $ containsAcceptingRun adc 
     guard $ (Map.lookup rho rhoMap) /= Just True --and test, whether we have analysed rho before
     let vs = do
           p <- (pos rho)
-          guard $ not $ p `elem` c
+          guard $ not $ p `elem` (c' adc)
           guard $ (length p) <= ((d r) + 1)
           Just s <- return $ symbolAtPos rho p
           let rhos' = filter (\t -> case symbolAtPos t [] of {Nothing -> False; Just s' -> target s' == target s}) eStar
           Just rhoP <- return $ termAtPos rho p
           --rho' <- nAryProd (fromInteger $ b r) rhos'
           --let rho' = case msort rhos' of {Nothing -> []; Just x -> x}
-          let seqs = checkForSequence (b r) rhoP rhos' --rhos' should be nubbed by construction.
+          let seqs = checkForSequence (oldB adc' r) rhoP rhos' --rhos' should be nubbed by construction.
           guard $ not $ null seqs
           let rho' = head seqs
           --guard $ checkDescending rhoP rho'
@@ -552,45 +593,22 @@ languageIsEmpty' adc = (map b $ transitions adc, not $ containsAcceptingRun adc 
   containsAcceptingRun :: (Ord q, Ord t) => ADC q t -> [Term (Transition q t)] -> Bool
   containsAcceptingRun adc' eStar = or $ map ((accepts adc') . (fmap symbol)) eStar
 
-languageIsEmpty :: (Ord q, Ord t) => ADC q t -> ([Integer], Bool)
-languageIsEmpty !adc = (map b $ transitions adc, not $ fix (e adc) Map.empty Map.empty) where
-  c = do
-    r <- transitions adc
-    pi <- (nub $ join $ dConstraint r) >>= \(a,b) -> [a,b]
-    suf <- filter (/= []) $ subsequences pi
-    guard $ suf `isSuffixOf` pi
-    return suf
-  n = fromIntegral $ length $ do -- n(A′) is the number of distinct atomic constraints in the rules of A′
-    r <- transitions adc
-    (modSym $ nub $ join $ dConstraint r) 
-  --d(A′) is the maximum length of |π| or |π′| in an atomic constraint π̸=π′ in a (!!!) rule of A′
-  d r = maximum $ 0 : do 
-    --r <- transitions adc
-    pi <- (nub $ join $ dConstraint r) >>= \(a,b) -> [a,b]
-    return $ length pi
-  --s(A)is the number of distinct suffixes of positions π,π′ in an atomic constraint π̸=π′ in a (!!!) rule of A
-  suffixes [] = []
-  suffixes (_:xs) = go xs
-    where go [] = [] : []
-          go f@(_:t) = f: go t
-  s r = length $ do
-    atom <- (modSym $ nub $ join $ dConstraint r) --distinct atomic constraints
-    let pi = fst atom
-    let pi' = snd atom
-    nub $ (suffixes pi) ++ (suffixes pi') --for proper suffixes
-    --nub $ (pi : suffixes pi) ++ (pi' : suffixes pi') --for suffixes
+languageIsEmpty :: (Ord q, Ord t) => ADC q t -> Bool
+languageIsEmpty !adc = not $ fix (e adc) Map.empty Map.empty where
   sizeQ :: Double
   sizeQ = fromIntegral $ length $ states adc
   euler :: Double
   euler = 2.71828182845
-  fac i = product [1..i]
+  --fac i = product [1..i]
   delta r = let s' = s r in sizeQ * 2^s' * (fromIntegral $ fac s')
-  beta r = (fromIntegral $ 1 + d r) * n * (1.0 + euler * (delta r))
-  gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n * euler) * (d' + 1) * n * (delta r)
+  n' = n adc
+  beta r = (fromIntegral $ 1 + d r) * n' * (1.0 + euler * (delta r))
+  gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
   k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
   b r = max
-        ((floor $ beta r) * (k r) * (floor $ gamma r))
-        ((floor $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
+        ((ceiling $ beta r) * (k r) * (ceiling $ gamma r))
+        ((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
+
   checkForSequence 1 r' es = [[r', e] | e <- es, r' >>> e]
   checkForSequence b' r' es | (fromInteger b') > length es = [] 
                             | otherwise = do
@@ -617,7 +635,7 @@ languageIsEmpty !adc = (map b $ transitions adc, not $ fix (e adc) Map.empty Map
     --we use a Data.Map instead of a Data.Set here, because Data.Set is limited to maxInt and the chance to exceed this bound definitely exists
     let vs = do
           p <- (pos rho)
-          guard $ not $ p `elem` c
+          guard $ not $ p `elem` (c' adc)
           guard $ (length p) <= ((d r) + 1)
           Just s <- return $ symbolAtPos rho p --s is a transition, because rho is a term over delta
           Just rhos' <- return $ Map.lookup (target s) eStar
@@ -658,47 +676,24 @@ languageIsEmpty !adc = (map b $ transitions adc, not $ fix (e adc) Map.empty Map
     return $ t == t'
   isProperPrefixOf p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
 
-languageIsFin :: (Ord q, Ord t) => ADC q t -> ([Integer], Bool)
-languageIsFin !adc = (map b $ transitions adc, not $ fix (e adc) 0 Map.empty Map.empty) where
-  fac i = product [1..i]
+languageIsFin :: (Ord q, Ord t) => ADC q t -> Bool
+languageIsFin !adc = not $ fix (e adc) 0 Map.empty Map.empty where
+  --fac i = product [1..i]
   h :: Integer
   h = div (371828182845 * (toInteger $ length $ states adc) *
-           (2^(toInteger $ c adc)) * (fac $ toInteger $ c adc) * (toInteger $ pi adc)) 100000000000
-  c' = do
-    r <- transitions adc
-    pi <- (nub $ join $ dConstraint r) >>= \(a,b) -> [a,b]
-    suf <- filter (/= []) $ subsequences pi
-    guard $ suf `isSuffixOf` pi
-    return suf
-  n = fromIntegral $ length $ do -- n(A′) is the number of distinct atomic constraints in the rules of A′
-    r <- transitions adc
-    (nub $ join $ dConstraint r)
-  --d(A′) is the maximum length of |π| or |π′| in an atomic constraint π̸=π′ in a (!!!) rule of A′
-  d r = maximum $ 0 : do 
-    --r <- transitions adc
-    pi <- (nub $ join $ dConstraint r) >>= \(a,b) -> [a,b]
-    return $ length pi
-  suffixes [] = []
-  suffixes (_:xs) = go xs
-    where go [] = [] : []
-          go f@(_:t) = f: go t
-  s r = length $ do
-    atom <- (modSym $ nub $ join $ dConstraint r) --distinct atomic constraints
-    let pi = fst atom
-    let pi' = snd atom
-    nub $ (suffixes pi) ++ (suffixes pi') --for proper suffixes
-    --nub $ (pi : suffixes pi) ++ (pi' : suffixes pi') --for suffixes
+           (2^(toInteger $ c adc)) * (fac $ toInteger $ c adc) * (1 + (toInteger $ pi adc))) 100000000000
   sizeQ :: Double
   sizeQ = fromIntegral $ length $ states adc
   euler :: Double
   euler = 2.71828182845
   delta r = let s' = s r in sizeQ * 2^s' * (fromIntegral $ fac s')
-  beta r = (fromIntegral $ 1 + d r) * n * (1.0 + euler * (delta r))
-  gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n * euler) * (d' + 1) * n * (delta r)
+  n' = n adc
+  beta r = (fromIntegral $ 1 + d r) * n' * (1.0 + euler * (delta r))
+  gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
   k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
   b r = max
-        ((floor $ beta r) * (k r) * (floor $ gamma r))
-        ((floor $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
+        ((ceiling $ beta r) * (k r) * (ceiling $ gamma r))
+        ((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
   checkForSequence 1 r' es = [[r', e] | e <- es, r' >>> e]
   checkForSequence b' r' es | (fromInteger b') > length es = [] 
                             | otherwise = do
@@ -725,7 +720,7 @@ languageIsFin !adc = (map b $ transitions adc, not $ fix (e adc) 0 Map.empty Map
     --we use a Data.Map instead of a Data.Set here, because Data.Set is limited to maxInt and the chance to exceed this bound definitely exists
     let vs = do
           p <- (pos rho)
-          guard $ not $ p `elem` c'
+          guard $ not $ p `elem` (c' adc)
           guard $ (length p) <= ((d r) + 1)
           Just s <- return $ symbolAtPos rho p --s is a transition, because rho is a term over delta
           Just rhos' <- return $ Map.lookup (target s) eStar
@@ -767,17 +762,85 @@ languageIsFin !adc = (map b $ transitions adc, not $ fix (e adc) 0 Map.empty Map
   isProperPrefixOf p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
 
 
-intersectionIsFin :: (Ord nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> Either Bool (Integer, ([Integer], Bool))
+intersectionIsFin :: (Ord nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> Either Bool (Integer, Bool)
 intersectionIsFin g r = case eIfIntersectionFin g r of
-    Left a -> Left $ snd $ languageIsEmpty a
+    Left a -> Left $ languageIsEmpty a
     Right (n, a) -> Right $ (n, languageIsEmpty a)
 
 
 intersectionIsEmpty :: (Ord nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> Bool
-intersectionIsEmpty g r = snd $ languageIsEmpty a where
+intersectionIsEmpty g r = languageIsEmpty a where
   a = productADC (constructADC g) (constructNfADC r)
 
+reduce :: Ord q => ADC q t -> ADC q t
+reduce adc = ADC (Set.toList $ marked adc ) (qf $ marked adc) (deltaReduced $ marked adc) where
+  qf !m = Set.toList $ (Set.fromList $ final adc) `Set.intersection` m
+  deltaReduced !m = do
+    r <- transitions adc
+    let dom = fromState r
+    let trgt = target r
+    let qs = Set.fromList (trgt : dom)
+    guard $ qs `Set.isSubsetOf` m
+    return r
+  marked :: Ord q => ADC q t -> Set.Set q
+  marked adc' = fix (mark adc') Set.empty
+  f :: Ord q => Set.Set q -> Transition q t -> Set.Set q
+  f marked' r = if (Set.fromList $ fromState r) `Set.isSubsetOf` marked'
+    then Set.insert (target r) marked' else marked'
+  mark :: Ord q => ADC q t -> Set.Set q -> Set.Set q
+  mark adc' marked' = foldl f marked' $ transitions adc'
+  fix f s | f s == s = s
+          | otherwise = fix f (f s)
 
+{-
+enumerateLanguage :: (Ord q, Ord t) => Integer -> ADC q t -> Map.Map Integer [Term t]
+enumerateLanguage maxHeight !adc = not $ fix (e adc) 0 Map.empty Map.empty where
+  f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q [Term (Transition q t)]
+             -> (Bool, Map.Map q [Term (Transition q t)], Map.Map (Term (Transition q t)) Bool)
+             -> Transition q t
+             -> (Map.Map Integer [Term t], Map.Map q [Term (Transition q t)],
+                 Map.Map (Term (Transition q t)) Bool)
+  f i adc' eStar (stop, es, rhoMap) r = foldl g (stop, es, rhoMap) $ do --f is inner for loop (for all rho and phi_i in E*)
+    let dom = fromState r
+    let m = length $ dom
+    rhos <- sequence $ do
+          qI <- dom
+          Just rhoIs <- return $ Map.lookup qI eStar
+          return $ rhoIs
+    guard $ length rhos == m
+    let rho = treeToTerm r rhos --for each rule build all terms over delta
+    --guard $ isRun adc' rho --this is true by construction of rhos
+    guard $ satisfies rho $ dConstraint r --But we still need to check, whether the constraints are satisfied.
+    guard $ (Map.lookup rho rhoMap) /= Just True --and test, whether we have analysed rho before
+    --we use a Data.Map instead of a Data.Set here, because Data.Set is limited to maxInt and the chance to exceed this bound definitely exists
+    let vs = do
+          p <- (pos rho)
+          guard $ not $ p `elem` (c' adc)
+          guard $ (length p) <= ((d r) + 1)
+          Just s <- return $ symbolAtPos rho p --s is a transition, because rho is a term over delta
+          Just rhos' <- return $ Map.lookup (target s) eStar
+          Just rhoP <- return $ termAtPos rho p
+          let seqs = checkForSequence (b r) rhoP rhos' --rhos' should be nubbed by construction, because of guard $ (Map.lookup rho rhoMap) /= Just True 
+          guard $ not $ null seqs
+          let rho' = head seqs
+          --guard $ checkDescending rhoP rho'
+          Just eqCheck <- return $ sequence $ map (\t -> substituteAtPos rho t p) rho'
+          return $ and $ map (\t -> not $ containsCloseEq t p) eqCheck
+    guard $ and vs
+    let trgt = target r
+    let stop' = trgt `elem` (final adc') && i > h
+    case Map.lookup trgt eStar of
+      Just trgts -> return (stop', Map.singleton trgt (rho:trgts), Map.insert rho True rhoMap)
+      Nothing -> return (stop, Map.singleton trgt [rho], Map.insert rho True rhoMap)
+  g (res, es, rhoMap) (res', rho, rhoMap') = (Map.union res res', Map.union es rho, Map.union rhoMap rhoMap') --g is outer for loop, for all transitions
+  e :: (Ord q, Ord t) => ADC q t -> Integer -> Map.Map q [Term (Transition q t)] ->
+    Map.Map (Term (Transition q t)) Bool ->
+    (Map.Map Integer [Term t], Map.Map q [Term (Transition q t)], Map.Map (Term (Transition q t)) Bool)
+  e adc' i eStar rhoMap = foldl (f i adc' eStar) (Map.empty, Map.empty, Map.empty) $ transitions adc'
+  fix f i e r | i == maxHeight = True --if e already contains an accepting run, return true
+              | (\(_, x, _) -> x) (f i e r) == e = False --if fixpoint is reached, but no accepting run found, return False
+            | otherwise = fix f (i+1) ((\(_, x, _) -> x) $ f i e r) ((\(_, _, y) -> y) $ f i e r)
+-}
 
 {-
 Everything below is for Debugging...
