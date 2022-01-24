@@ -20,7 +20,7 @@ import Data.Either
 {-
 Ground Terms
 -}
-data Term t = Symbol !t | App !(Term t) !(Term t) deriving (Show, Eq, Ord, Traversable, Functor, Foldable)
+data Term t = Symbol !t | App !(Term t) !(Term t) deriving (Show, Eq, Traversable, Functor, Foldable)
 
 {-
 functions on ground terms

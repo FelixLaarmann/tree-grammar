@@ -8,14 +8,16 @@ import Examples
 import Control.Unification.IntVar
 import Control.Unification.Types
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 
 main :: IO ()
 main = do
   --prettyPrintADC $ constructNfADC exampleRS
-  putStrLn "language of normal forms of boolRS' is finite:"
+  putStrLn "language of normal forms of boolRS' intersect boolGrammer is finite:"
   putStrLn ""
-  print $  languageIsFin $ constructNfADC boolRS
+  --print $  languageIsFin $ constructNfADC inter'
+  print test
   putStrLn ""
   --putStrLn "Intersection of boolGrammar and boolRS' is finite:"
   --putStrLn ""
@@ -35,6 +37,9 @@ main = do
 
 inter = productADC (constructADC sortGrammar) (constructNfADC sortRS)
 inter' = productADC (constructADC boolGrammar) (constructNfADC boolRS')
+inter'' = reduce $ productADC (constructNfADC boolRS) (constructNfADC boolRS) --nice minimization :D
+
+test = fmap (Set.size . snd) (Map.toList $ enumerateLanguage 5 $ constructNfADC boolRS') -- >>= (Set.toList . snd) --Set.size $ enumerateLanguage 4 $ constructNfADC boolRS'
 --a = e inter ls Map.empty
 --b' = e inter (fst a) (snd a)
 --c'' = e inter (fst b') (snd b')
