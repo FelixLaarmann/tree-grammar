@@ -216,3 +216,33 @@ boolRS' = RS
       UVar $ IntVar 0
     )
   ] 
+
+
+boolTerminals' = ["F", "AND"]
+
+boolNonTerminals' = [0]
+
+boolGrammar' :: TreeGrammar String Int
+boolGrammar' = TreeGrammar 0 boolNonTerminals' boolTerminals' rules where
+  rules = [
+    (0, Terminal "F" []),
+    (0, Terminal "AND" [NonTerminal 0, NonTerminal 0])
+          ]
+
+boolRS'' :: RS String IntVar
+boolRS'' = RS
+  [("F", 0), ("AND", 2)]
+  [
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "F")) (UVar $ IntVar 0),
+      UTerm $ SymbolV "F"
+    ),
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UVar $ IntVar 0)) (UTerm $ SymbolV "F"),
+      UTerm $ SymbolV "F"
+    ),
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UVar $ IntVar 0)) (UVar $ IntVar 0),
+      UVar $ IntVar 0
+    )
+  ] 

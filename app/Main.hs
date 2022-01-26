@@ -14,10 +14,11 @@ import qualified Data.Set as Set
 main :: IO ()
 main = do
   --prettyPrintADC $ constructNfADC exampleRS
-  putStrLn "language of normal forms of boolRS' intersect boolGrammer is finite:"
+  --putStrLn "language of normal forms of boolRS' intersect boolGrammer is finite:"
+  putStrLn "enumerateLanguage' (until fixpoint) of boolRS', fixed b = 1:"
   putStrLn ""
-  --print $  languageIsFin $ constructNfADC inter'
-  print test
+  print $ enumerateLanguage' (constructNfADC boolRS')
+  --mapM_ print $ Set.toList $ (enumerateLanguage 3 inter) Map.! 3
   putStrLn ""
   --putStrLn "Intersection of boolGrammar and boolRS' is finite:"
   --putStrLn ""
