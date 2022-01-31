@@ -454,6 +454,17 @@ checkForSequence' rho p r' = foldl cond 0 where
       Just pump -> if (r' >>> e) && (not $ containsCloseEq' pump p) then n+1 else n
       Nothing -> n
 
+--checkForSequence'' :: (Ord t, Ord q) => Term (Transition q t) -> Integer -> Pos -> Term (Transition q t)
+--    -> [Term (Transition q t)] -> Bool
+checkForSequence'' rho 0 p r' _ = True
+checkForSequence'' rho b p r' [] = False
+checkForSequence'' rho b p r' (r:rs) = case substituteAtPos rho r p of
+      Just pump -> if (r' >>> r) && (not $ containsCloseEq' pump p)
+        then checkForSequence'' rho (b-1) p r' rs
+        else checkForSequence'' rho b p r' rs
+      Nothing -> checkForSequence'' rho b p r' rs
+
+
 containsCloseEq' :: (Eq t, Eq q) => Term (Transition q t) -> Pos -> Bool
 containsCloseEq' rho p = or $ do
     let posRho = pos rho
@@ -763,9 +774,9 @@ enumerateLanguage maxHeight !adc = fix (e adc) 0 Map.empty Map.empty Set.empty w
   beta r = (fromIntegral $ 1 + d r) * n' * (1.0 + euler * (delta r))
   gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
   k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
-  b r = max
-        ((ceiling $ beta r) * (k r) * (ceiling $ gamma r))
-        ((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
+  b r = 5--max
+        --((ceiling $ beta r) * (k r) * (ceiling $ gamma r))
+        --((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
   checkForSequence rho p r' = foldl cond 0 where
     cond n e = case substituteAtPos rho e p of
       Just pump -> if (r' >>> e) && (not $ containsCloseEq pump p) then n+1 else n
@@ -787,16 +798,18 @@ enumerateLanguage maxHeight !adc = fix (e adc) 0 Map.empty Map.empty Set.empty w
     --and test, whether we have analysed rho before
     --let trgt = target r
     guard $ Set.notMember rho seen
+    let b' = b r
     let vs = do
           p <- (pos rho)
           guard $ not $ p `elem` (c' adc)
           guard $ (length p) <= ((d r) + 1)
           Just s <- return $ symbolAtPos rho p --s is a transition, because rho is a term over delta
           Just rhos' <- return $ Map.lookup (target s) eStar
-          guard $ (b r) <= (toInteger $ length rhos')
+          guard $ b' <= (toInteger $ length rhos')
           Just rhoP <- return $ termAtPos rho p
-          let seqs = checkForSequence rho p rhoP $ Set.toDescList rhos' 
-          return $ (seqs) >= (b r)
+          --let seqs = checkForSequence rho p rhoP $ Set.toDescList rhos' 
+          --return $ (seqs) >= (b r)
+          return $ checkForSequence'' rho b' p rhoP $ Set.toDescList rhos' 
     --guard $ and vs
     let trgt = target r
     if (not $ null vs) && and vs then --elem trgt $ final adc' then

@@ -113,7 +113,7 @@ lpo is a lexicographic path ordering on ground terms >_lpo
 lpo :: (Ord t) => Term t -> Term t -> Bool
 lpo (Symbol f) (Symbol g) = f > g --constants are compared by the order on the signature
 lpo s t = a || b || c where
-  a = (or $ map (\i -> lpo i t) si) || (or $ map (== t) si)
+  a = (or $ map (== t) si) || (or $ map (\i -> lpo i t) si)
   b = (f > g) && (and $ map (lpo s) ti)
   c = (f == g) && case findIndex (not) $ zipWith (==) si ti of
     Nothing -> False
