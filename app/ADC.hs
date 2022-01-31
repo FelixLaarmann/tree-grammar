@@ -451,38 +451,38 @@ checkForSequence' :: (Ord t, Ord q) => Term (Transition q t) -> Pos -> Term (Tra
      -> [Term (Transition q t)] -> Int
 checkForSequence' rho p r' = foldl cond 0 where
     cond n e = case substituteAtPos rho e p of
-      Just pump -> if (r' >>> e) && (not $ containsCloseEq' pump p) then n+1 else n
+      Just pump -> if (r' >>> e) && (not $ containsCloseEq pump p) then n+1 else n
       Nothing -> n
 
---checkForSequence'' :: (Ord t, Ord q) => Term (Transition q t) -> Integer -> Pos -> Term (Transition q t)
+--checkForSequence :: (Ord t, Ord q) => Term (Transition q t) -> Integer -> Pos -> Term (Transition q t)
 --    -> [Term (Transition q t)] -> Bool
-checkForSequence'' rho 0 p r' _ = True
-checkForSequence'' rho b p r' [] = False
-checkForSequence'' rho b p r' (r:rs) = case substituteAtPos rho r p of
-      Just pump -> if (r' >>> r) && (not $ containsCloseEq' pump p)
-        then checkForSequence'' rho (b-1) p r' rs
-        else checkForSequence'' rho b p r' rs
-      Nothing -> checkForSequence'' rho b p r' rs
+checkForSequence rho 0 p r' _ = True
+checkForSequence rho b p r' [] = False
+checkForSequence rho b p r' (r:rs) = case substituteAtPos rho r p of
+      Just pump -> if (r' >>> r) && (not $ containsCloseEq pump p)
+        then checkForSequence rho (b-1) p r' rs
+        else checkForSequence rho b p r' rs
+      Nothing -> checkForSequence rho b p r' rs
 
 
-containsCloseEq' :: (Eq t, Eq q) => Term (Transition q t) -> Pos -> Bool
-containsCloseEq' rho p = or $ do
+containsCloseEq :: (Eq t, Eq q) => Term (Transition q t) -> Pos -> Bool
+containsCloseEq rho p = or $ do
     let posRho = pos rho
     p' <- posRho 
-    guard $ p' `isPrefixOf` p 
+    guard $ p' `isPrefixOf` p -- p' <= p
     Just s <- return $ symbolAtPos rho p'
-    let pis = (nub $ join $ dConstraint s) >>= \(a,b) -> [a,b]
-    pi <- pis
-    pi' <- pis
-    guard $ (p' ++ pi) `elem` posRho
-    guard $ (p' ++ pi') `elem` posRho
-    guard $ p' `isProperPrefixOf'` pi || p' `isProperPrefixOf'` pi' 
-    Just t <- return $ termAtPos rho (p' ++ pi)
-    Just t' <- return $ termAtPos rho (p' ++ pi')
+    (pi, pi') <- (nub $ join $ dConstraint s)
+    let ppi = (p' ++ pi)
+    let ppi' = (p' ++ pi')
+    guard $ ppi `elem` posRho
+    guard $ ppi' `elem` posRho
+    guard $ p `isProperPrefixOf` ppi || p `isProperPrefixOf` ppi'
+    Just t <- return $ termAtPos rho ppi
+    Just t' <- return $ termAtPos rho ppi'
     return $ t == t'
 
 
-isProperPrefixOf' p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
+isProperPrefixOf p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
 
 childTargets :: Term (Transition q t) -> [q]
 childTargets t = go (arguments t) where
@@ -592,10 +592,6 @@ languageIsEmpty !adc = not $ fix (e adc) 0 Map.empty Set.empty where
   b r = max
         ((ceiling $ beta r) * (k r) * (ceiling $ gamma r))
         ((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
-  checkForSequence rho p r' = foldl cond 0 where
-    cond n e = case substituteAtPos rho e p of
-      Just pump -> if (r' >>> e) && (not $ containsCloseEq pump p) then n+1 else n
-      Nothing -> n
   f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q (Set.Set (Term (Transition q t)))
              -> (Bool, Map.Map q (Set.Set (Term (Transition q t))), Set.Set (Term (Transition q t)))
              -> Transition q t
@@ -611,6 +607,7 @@ languageIsEmpty !adc = not $ fix (e adc) 0 Map.empty Set.empty where
     let rho = treeToTerm r rhos --for each rule build all terms over delta
     guard $ satisfies rho $ dConstraint r --But we still need to check, whether the constraints are satisfied.
     guard $ Set.notMember rho seen --and test, whether we have analysed rho before
+    let b' = b r
     let vs = do
           p <- (pos rho)
           guard $ not $ p `elem` (c' adc)
@@ -619,8 +616,7 @@ languageIsEmpty !adc = not $ fix (e adc) 0 Map.empty Set.empty where
           Just rhos' <- return $ Map.lookup (target s) eStar
           guard $ (b r) <= (toInteger $ length rhos')
           Just rhoP <- return $ termAtPos rho p
-          let seqs = checkForSequence rho p rhoP $ Set.toDescList rhos' 
-          return $ (seqs) >= (b r)
+          return $ checkForSequence rho b' p rhoP $ Set.toDescList rhos' 
     let trgt = target r
     let stop' = trgt `elem` (final adc')
     if (not $ null vs) && and vs then --only add terms to eStar, where no sequence exists
@@ -634,6 +630,7 @@ languageIsEmpty !adc = not $ fix (e adc) 0 Map.empty Set.empty where
   fix f i e r | (\(x, _, _) -> x) (f i e r) = True --if e already contains an accepting run, return true
               | (\(_, x, _) -> x) (f i e r) == e = False --if fixpoint is reached, but no accepting run found, return False
               | otherwise = fix f (i+1) ((\(_, x, _) -> x) $ f i e r) ((\(_, _, y) -> y) $ f i e r)
+{-
   containsCloseEq rho p = or $ do
     let posRho = pos rho
     p' <- posRho 
@@ -649,7 +646,7 @@ languageIsEmpty !adc = not $ fix (e adc) 0 Map.empty Set.empty where
     Just t' <- return $ termAtPos rho (p' ++ pi')
     return $ t == t'
   isProperPrefixOf p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
-
+-}
 
 languageIsFin :: (Ord q, Ord t) => ADC q t -> Bool
 languageIsFin !adc = not $ fix (e adc) 0 Map.empty Set.empty where
@@ -669,10 +666,6 @@ languageIsFin !adc = not $ fix (e adc) 0 Map.empty Set.empty where
   b r = max
         ((ceiling $ beta r) * (k r) * (ceiling $ gamma r))
         ((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
-  checkForSequence rho p r' = foldl cond 0 where
-    cond n e = case substituteAtPos rho e p of
-      Just pump -> if (r' >>> e) && (not $ containsCloseEq pump p) then n+1 else n
-      Nothing -> n
   f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q (Set.Set (Term (Transition q t)))
              -> (Bool, Map.Map q (Set.Set (Term (Transition q t))), Set.Set (Term (Transition q t)))
              -> Transition q t
@@ -688,6 +681,7 @@ languageIsFin !adc = not $ fix (e adc) 0 Map.empty Set.empty where
     let rho = treeToTerm r rhos --for each rule build all terms over delta
     guard $ satisfies rho $ dConstraint r --But we still need to check, whether the constraints are satisfied.
     guard $ Set.notMember rho seen --and test, whether we have analysed rho before
+    let b' = b r
     let vs = do
           p <- (pos rho)
           guard $ not $ p `elem` (c' adc)
@@ -696,8 +690,7 @@ languageIsFin !adc = not $ fix (e adc) 0 Map.empty Set.empty where
           Just rhos' <- return $ Map.lookup (target s) eStar
           guard $ (b r) <= (toInteger $ length rhos')
           Just rhoP <- return $ termAtPos rho p
-          let seqs = checkForSequence rho p rhoP $ Set.toDescList rhos' 
-          return $ (seqs) >= (b r)
+          return $ checkForSequence rho b' p rhoP $ Set.toDescList rhos' 
     let trgt = target r
     let stop' = trgt `elem` (final adc') && i > h
     if (not $ null vs) && and vs then --only add terms to eStar, where no sequence exists
@@ -711,6 +704,7 @@ languageIsFin !adc = not $ fix (e adc) 0 Map.empty Set.empty where
   fix f i e r | (\(x, _, _) -> x) (f i e r) = True --if e already contains an accepting run, return true
               | (\(_, x, _) -> x) (f i e r) == e = False --if fixpoint is reached, but no accepting run found, return False
               | otherwise = fix f (i+1) ((\(_, x, _) -> x) $ f i e r) ((\(_, _, y) -> y) $ f i e r)
+{-
   containsCloseEq rho p = or $ do
     let posRho = pos rho
     p' <- posRho 
@@ -726,7 +720,7 @@ languageIsFin !adc = not $ fix (e adc) 0 Map.empty Set.empty where
     Just t' <- return $ termAtPos rho (p' ++ pi')
     return $ t == t'
   isProperPrefixOf p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
-
+-}
 
 intersectionIsFin :: (Ord nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> Either Bool (Integer, Bool)
 intersectionIsFin g r = case eIfIntersectionFin g r of
@@ -774,13 +768,9 @@ enumerateLanguage maxHeight !adc = fix (e adc) 0 Map.empty Map.empty Set.empty w
   beta r = (fromIntegral $ 1 + d r) * n' * (1.0 + euler * (delta r))
   gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
   k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
-  b r = 5--max
-        --((ceiling $ beta r) * (k r) * (ceiling $ gamma r))
-        --((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
-  checkForSequence rho p r' = foldl cond 0 where
-    cond n e = case substituteAtPos rho e p of
-      Just pump -> if (r' >>> e) && (not $ containsCloseEq pump p) then n+1 else n
-      Nothing -> n
+  b r = max
+        ((ceiling $ beta r) * (k r) * (ceiling $ gamma r))
+        ((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
   f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q (Set.Set (Term (Transition q t)))
              -> (Map.Map Integer (Set.Set (Term t)), Map.Map q (Set.Set (Term (Transition q t))), Set.Set (Term (Transition q t)))
              -> Transition q t
@@ -807,9 +797,9 @@ enumerateLanguage maxHeight !adc = fix (e adc) 0 Map.empty Map.empty Set.empty w
           Just rhos' <- return $ Map.lookup (target s) eStar
           guard $ b' <= (toInteger $ length rhos')
           Just rhoP <- return $ termAtPos rho p
-          --let seqs = checkForSequence rho p rhoP $ Set.toDescList rhos' 
+          --let seqs = checkForSequence' rho p rhoP $ Set.toDescList rhos' 
           --return $ (seqs) >= (b r)
-          return $ checkForSequence'' rho b' p rhoP $ Set.toDescList rhos' 
+          return $ checkForSequence rho b' p rhoP $ Set.toDescList rhos' 
     --guard $ and vs
     let trgt = target r
     if (not $ null vs) && and vs then --elem trgt $ final adc' then
@@ -824,21 +814,25 @@ enumerateLanguage maxHeight !adc = fix (e adc) 0 Map.empty Map.empty Set.empty w
                | i == maxHeight = (\(_, x, _) -> x) (f i e t m)
                | otherwise = fix f (i+1)
                  ((\(_, x, _) -> x) $ f i e t m) ((\(x, _, _) -> x) $ f i e t m) ((\(_, _, x) -> x) $ f i e t m)
+{-
   containsCloseEq rho p = or $ do
     let posRho = pos rho
     p' <- posRho 
-    guard $ p' `isPrefixOf` p --is this the right implementation for p' <= p????
+    guard $ p' `isPrefixOf` p -- p' <= p
     Just s <- return $ symbolAtPos rho p'
-    let pis = (nub $ join $ dConstraint s) >>= \(a,b) -> [a,b]
-    pi <- pis
-    pi' <- pis
-    guard $ (p' ++ pi) `elem` posRho
-    guard $ (p' ++ pi') `elem` posRho
-    guard $ p' `isProperPrefixOf` pi || p' `isProperPrefixOf` pi' 
-    Just t <- return $ termAtPos rho (p' ++ pi)
-    Just t' <- return $ termAtPos rho (p' ++ pi')
+    (pi, pi') <- (nub $ join $ dConstraint s)
+    --pi <- pis
+    --pi' <- pis
+    let ppi = (p' ++ pi)
+    let ppi' = (p' ++ pi')
+    guard $ ppi `elem` posRho
+    guard $ ppi' `elem` posRho
+    guard $ p `isProperPrefixOf` ppi || p `isProperPrefixOf` ppi'
+    Just t <- return $ termAtPos rho ppi
+    Just t' <- return $ termAtPos rho ppi'
     return $ t == t'
   isProperPrefixOf p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
+-}
 {-
 boolRS' :: RS String IntVar
 boolRS' = RS
