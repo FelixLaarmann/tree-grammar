@@ -439,9 +439,14 @@ multiSetExtension ord m n = or $ do
   lexProd (d, m, r) (d', m', r') | d == d' = if (m == m') then lpo r r' else multiSetExtension (>>>) m m'
                                  | otherwise = d > d'
 
+(>>>>) :: (Ord t) => Term t -> Term t -> Bool
+(>>>>) rho1 rho2 = lexProd (depth rho1, rho1) (depth rho2, rho2) where
+  lexProd (d, r) (d', r') | d == d' = r > r'
+                          | otherwise = d > d'
+
 compareTerm :: (Ord t) => Term t -> Term t -> Ordering
 compareTerm t1 t2 | t1 == t2 = EQ
-                  | t1 >>> t2 = GT
+                  | t1 >>>> t2 = GT
                   | otherwise = LT
 
 newtype OrdTerm t = OrdTerm {getTerm :: Term t} deriving (Eq, Show)
@@ -560,7 +565,7 @@ oldB adc r = let sizeQ = toInteger $ length $ states adc in
 newBfin :: Eq t => ADC q t -> Transition q t -> Integer
 newBfin adc r =
   max
-  ((floor $ beta r) * (k r) * (floor $ gamma r))
+  ((floor $ beta r) * (k r) + (floor $ gamma r))
   ((floor $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
   where
     sizeQ :: Double
@@ -575,7 +580,7 @@ newBfin adc r =
 newBempty :: Eq t => ADC q t -> Transition q t -> Integer
 newBempty adc r =
   max
-  ((floor $ beta r) * (k r) * (floor $ gamma r))
+  ((floor $ beta r) * (k r) + (floor $ gamma r))
   ((floor $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
   where
     sizeQ :: Double
@@ -600,7 +605,7 @@ languageIsEmpty !adc = not $ fix (e adc) 0 Map.empty Set.empty where
   gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
   k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
   b r = max
-        ((ceiling $ beta r) * (k r) * (ceiling $ gamma r))
+        ((ceiling $ beta r) * (k r) + (ceiling $ gamma r))
         ((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
   f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q (Set.Set (OrdTerm (Transition q t)))
              -> (Bool, Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
@@ -627,7 +632,7 @@ languageIsEmpty !adc = not $ fix (e adc) 0 Map.empty Set.empty where
           --guard $ b' <= (toInteger $ length rhos')
           Just rhoP <- return $ termAtPos rho p
           let descRhos = map getTerm $ Set.toDescList rhos'
-          Just smallerRuns <- return $ (findIndex (\x -> rhoP >>> x) descRhos >>= \i -> return $ drop i descRhos)
+          Just smallerRuns <- return $ (findIndex (\x -> rhoP >>>> x) descRhos >>= \i -> return $ drop i descRhos)
           guard $ b' <= (toInteger $ length smallerRuns)
           return $ not $ checkForSequence'' rho b' p smallerRuns --for all p there exists no sequence
     let trgt = target r
@@ -681,7 +686,7 @@ languageIsFin !adc = not $ fix (e adc) 0 Map.empty Set.empty where
   gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
   k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
   b r = max
-        ((ceiling $ beta r) * (k r) * (ceiling $ gamma r))
+        ((ceiling $ beta r) * (k r) + (ceiling $ gamma r))
         ((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
   f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q (Set.Set (OrdTerm (Transition q t)))
              -> (Bool, Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
@@ -708,7 +713,7 @@ languageIsFin !adc = not $ fix (e adc) 0 Map.empty Set.empty where
           --guard $ b' <= (toInteger $ length rhos')
           Just rhoP <- return $ termAtPos rho p
           let descRhos = map getTerm $ Set.toDescList rhos'
-          Just smallerRuns <- return $ (findIndex (\x -> rhoP >>> x) descRhos >>= \i -> return $ drop i descRhos)
+          Just smallerRuns <- return $ (findIndex (\x -> rhoP >>>> x) descRhos >>= \i -> return $ drop i descRhos)
           guard $ b' <= (toInteger $ length smallerRuns)
           return $ not $ checkForSequence'' rho b' p smallerRuns --for all p there exists no sequence
     let trgt = target r
@@ -793,7 +798,7 @@ enumerateLanguage maxHeight !adc = fix (e adc) 0 Map.empty Map.empty Set.empty w
   gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
   k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
   b r = max
-        ((ceiling $ beta r) * (k r) * (ceiling $ gamma r))
+        ((ceiling $ beta r) * (k r) + (ceiling $ gamma r))
         ((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
   f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q (Set.Set (OrdTerm (Transition q t)))
              -> (Map.Map Integer (Set.Set (Term t)), Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
@@ -822,7 +827,7 @@ enumerateLanguage maxHeight !adc = fix (e adc) 0 Map.empty Map.empty Set.empty w
           --guard $ b' <= (toInteger $ length rhos')
           Just rhoP <- return $ termAtPos rho p
           let descRhos = map getTerm $ Set.toDescList rhos'
-          Just smallerRuns <- return $ (findIndex (\x -> rhoP >>> x) descRhos >>= \i -> return $ drop i descRhos)
+          Just smallerRuns <- return $ (findIndex (\x -> rhoP >>>> x) descRhos >>= \i -> return $ drop i descRhos)
           guard $ b' <= (toInteger $ length smallerRuns)
           return $ not $ checkForSequence'' rho b' p smallerRuns --for all p there exists no sequence
     --guard $ and vs

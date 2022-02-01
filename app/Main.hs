@@ -29,6 +29,8 @@ main = do
   print $ length $ (Map.toList $ enumerateLanguage 2 $ inter') >>= (Set.toList . snd)
   putStrLn "3:"
   print $ length $ (Map.toList $ enumerateLanguage 3 $ inter') >>= (Set.toList . snd)
+  putStrLn "4:"
+  print $ length $ (Map.toList $ enumerateLanguage 4 $ inter') >>= (Set.toList . snd)
   --putStrLn "4:"
   --print $ length $ (Map.toList $ enumerateLanguage 4 $ constructNfADC boolRS') >>= (Set.toList . snd)
   --mapM_ print $ Set.toList $ (enumerateLanguage 3 inter) Map.! 3
