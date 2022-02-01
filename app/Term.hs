@@ -20,7 +20,7 @@ import Data.Either
 {-
 Ground Terms
 -}
-data Term t = Symbol !t | App !(Term t) !(Term t) deriving (Show, Eq, Traversable, Functor, Foldable)
+data Term t = Symbol !t | App !(Term t) !(Term t) deriving (Show, Eq, Ord, Traversable, Functor, Foldable)
 
 {-
 functions on ground terms
@@ -105,7 +105,7 @@ substituteAtPos t t' (p : ps) = do
         applyAt n f (l : ls) = (Just l) : applyAt (n-1) f ls
 
 depth ::Term t -> Int
-depth = maximum . (map length) . pos
+depth = (foldl' (\n p -> max n $ length p) 0) . pos --maximum . (map length) . pos
 
 {-
 lpo is a lexicographic path ordering on ground terms >_lpo

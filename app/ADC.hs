@@ -444,8 +444,10 @@ compareTerm t1 t2 | t1 == t2 = EQ
                   | t1 >>> t2 = GT
                   | otherwise = LT
 
-instance Ord t => Ord (Term t) where
-  compare = compareTerm
+newtype OrdTerm t = OrdTerm {getTerm :: Term t} deriving (Eq, Show)
+
+instance Ord t => Ord (OrdTerm t) where
+  compare l r = compareTerm (getTerm l) (getTerm r)
 
 checkForSequence' :: (Ord t, Ord q) => Term (Transition q t) -> Pos -> Term (Transition q t)
      -> [Term (Transition q t)] -> Int
@@ -464,6 +466,13 @@ checkForSequence rho b p r' (r:rs) = case substituteAtPos rho r p of
         else checkForSequence rho b p r' rs
       Nothing -> checkForSequence rho b p r' rs
 
+checkForSequence'' rho 0 p _ = True
+checkForSequence'' rho b p [] = False
+checkForSequence'' rho b p (r:rs) = case substituteAtPos rho r p of
+      Just pump -> if (not $ containsCloseEq pump p)
+        then checkForSequence'' rho (b-1) p rs
+        else checkForSequence'' rho b p rs
+      Nothing -> checkForSequence'' rho b p rs
 
 containsCloseEq :: (Eq t, Eq q) => Term (Transition q t) -> Pos -> Bool
 containsCloseEq rho p = or $ do
@@ -586,23 +595,24 @@ languageIsEmpty !adc = not $ fix (e adc) 0 Map.empty Set.empty where
   euler = 2.71828182845
   delta r = let s' = s r in sizeQ * 2^s' * (fromIntegral $ fac s')
   n' = n adc
+  c'' = c' adc
   beta r = (fromIntegral $ 1 + d r) * n' * (1.0 + euler * (delta r))
   gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
   k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
   b r = max
         ((ceiling $ beta r) * (k r) * (ceiling $ gamma r))
         ((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
-  f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q (Set.Set (Term (Transition q t)))
-             -> (Bool, Map.Map q (Set.Set (Term (Transition q t))), Set.Set (Term (Transition q t)))
+  f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q (Set.Set (OrdTerm (Transition q t)))
+             -> (Bool, Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
              -> Transition q t
-             -> (Bool, Map.Map q (Set.Set (Term (Transition q t))), Set.Set (Term (Transition q t)))
+             -> (Bool, Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
   f i adc' eStar (stop, es, seen) r = foldl g (stop, es, seen) $ do --f is inner for loop (for all rho and phi_i in E*)
     let dom = fromState r
     let m = length $ dom
     rhos <- sequence $ do
           qI <- dom
           Just rhoIs <- return $ Map.lookup qI eStar
-          return $ Set.toList rhoIs
+          return $ map getTerm $ Set.toList rhoIs
     guard $ length rhos == m
     let rho = treeToTerm r rhos --for each rule build all terms over delta
     guard $ satisfies rho $ dConstraint r --But we still need to check, whether the constraints are satisfied.
@@ -610,22 +620,28 @@ languageIsEmpty !adc = not $ fix (e adc) 0 Map.empty Set.empty where
     let b' = b r
     let vs = do
           p <- (pos rho)
-          guard $ not $ p `elem` (c' adc)
+          guard $ not $ p `elem` c''
           guard $ (length p) <= ((d r) + 1)
           Just s <- return $ symbolAtPos rho p --s is a transition, because rho is a term over delta
           Just rhos' <- return $ Map.lookup (target s) eStar
-          guard $ (b r) <= (toInteger $ length rhos')
+          --guard $ b' <= (toInteger $ length rhos')
           Just rhoP <- return $ termAtPos rho p
-          return $ checkForSequence rho b' p rhoP $ Set.toDescList rhos' 
+          let descRhos = map getTerm $ Set.toDescList rhos'
+          Just smallerRuns <- return $ (findIndex (\x -> rhoP >>> x) descRhos >>= \i -> return $ drop i descRhos)
+          guard $ b' <= (toInteger $ length smallerRuns)
+          return $ not $ checkForSequence'' rho b' p smallerRuns --for all p there exists no sequence
     let trgt = target r
     let stop' = trgt `elem` (final adc')
-    if (not $ null vs) && and vs then --only add terms to eStar, where no sequence exists
-      return (stop', eStar, Set.insert rho seen) else
-      return (stop', Map.insertWith (Set.union) trgt (Set.singleton rho) eStar, Set.insert rho seen)
+    if and vs
+      then --only add terms to eStar, where no sequence exists
+      --return (stop', eStar, Set.insert rho seen) else
+      return (stop', Map.insertWith (Set.union) trgt (Set.singleton $ OrdTerm rho) eStar, Set.insert rho seen)
+      else
+      return (stop', eStar, Set.insert rho seen)
   g (stop, es, seen) (stop', rho, seen') = (stop || stop', Map.unionWith Set.union es rho, Set.union seen seen') --g is outer for loop, for all transitions
-  e :: (Ord q, Ord t) => ADC q t -> Integer -> Map.Map q (Set.Set (Term (Transition q t))) ->
+  e :: (Ord q, Ord t) => ADC q t -> Integer -> Map.Map q (Set.Set (OrdTerm (Transition q t))) ->
     Set.Set (Term (Transition q t)) ->
-    (Bool, Map.Map q (Set.Set (Term (Transition q t))), Set.Set (Term (Transition q t)))
+    (Bool, Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
   e adc' i eStar seen = foldl (f i adc' eStar) (False, Map.empty, seen) $ transitions adc'
   fix f i e r | (\(x, _, _) -> x) (f i e r) = True --if e already contains an accepting run, return true
               | (\(_, x, _) -> x) (f i e r) == e = False --if fixpoint is reached, but no accepting run found, return False
@@ -660,23 +676,24 @@ languageIsFin !adc = not $ fix (e adc) 0 Map.empty Set.empty where
   euler = 2.71828182845
   delta r = let s' = s r in sizeQ * 2^s' * (fromIntegral $ fac s')
   n' = n adc
+  c'' = c' adc
   beta r = (fromIntegral $ 1 + d r) * n' * (1.0 + euler * (delta r))
   gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
   k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
   b r = max
         ((ceiling $ beta r) * (k r) * (ceiling $ gamma r))
         ((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
-  f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q (Set.Set (Term (Transition q t)))
-             -> (Bool, Map.Map q (Set.Set (Term (Transition q t))), Set.Set (Term (Transition q t)))
+  f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q (Set.Set (OrdTerm (Transition q t)))
+             -> (Bool, Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
              -> Transition q t
-             -> (Bool, Map.Map q (Set.Set (Term (Transition q t))), Set.Set (Term (Transition q t)))
+             -> (Bool, Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
   f i adc' eStar (stop, es, seen) r = foldl g (stop, es, seen) $ do --f is inner for loop (for all rho and phi_i in E*)
     let dom = fromState r
     let m = length $ dom
     rhos <- sequence $ do
           qI <- dom
           Just rhoIs <- return $ Map.lookup qI eStar
-          return $ Set.toList rhoIs
+          return $ map getTerm $ Set.toList rhoIs
     guard $ length rhos == m
     let rho = treeToTerm r rhos --for each rule build all terms over delta
     guard $ satisfies rho $ dConstraint r --But we still need to check, whether the constraints are satisfied.
@@ -684,22 +701,28 @@ languageIsFin !adc = not $ fix (e adc) 0 Map.empty Set.empty where
     let b' = b r
     let vs = do
           p <- (pos rho)
-          guard $ not $ p `elem` (c' adc)
+          guard $ not $ p `elem` c''
           guard $ (length p) <= ((d r) + 1)
           Just s <- return $ symbolAtPos rho p --s is a transition, because rho is a term over delta
           Just rhos' <- return $ Map.lookup (target s) eStar
-          guard $ (b r) <= (toInteger $ length rhos')
+          --guard $ b' <= (toInteger $ length rhos')
           Just rhoP <- return $ termAtPos rho p
-          return $ checkForSequence rho b' p rhoP $ Set.toDescList rhos' 
+          let descRhos = map getTerm $ Set.toDescList rhos'
+          Just smallerRuns <- return $ (findIndex (\x -> rhoP >>> x) descRhos >>= \i -> return $ drop i descRhos)
+          guard $ b' <= (toInteger $ length smallerRuns)
+          return $ not $ checkForSequence'' rho b' p smallerRuns --for all p there exists no sequence
     let trgt = target r
     let stop' = trgt `elem` (final adc') && i > h
-    if (not $ null vs) && and vs then --only add terms to eStar, where no sequence exists
-      return (stop', eStar, Set.insert rho seen) else
-      return (stop', Map.insertWith (Set.union) trgt (Set.singleton rho) eStar, Set.insert rho seen)
+    if and vs
+      then --only add terms to eStar, where no sequence exists
+      --return (stop', eStar, Set.insert rho seen) else
+      return (stop', Map.insertWith (Set.union) trgt (Set.singleton $ OrdTerm rho) eStar, Set.insert rho seen)
+      else
+      return (stop', eStar, Set.insert rho seen)
   g (stop, es, seen) (stop', rho, seen') = (stop || stop', Map.unionWith Set.union es rho, Set.union seen seen') --g is outer for loop, for all transitions
-  e :: (Ord q, Ord t) => ADC q t -> Integer -> Map.Map q (Set.Set (Term (Transition q t))) ->
+  e :: (Ord q, Ord t) => ADC q t -> Integer -> Map.Map q (Set.Set (OrdTerm (Transition q t))) ->
     Set.Set (Term (Transition q t)) ->
-    (Bool, Map.Map q (Set.Set (Term (Transition q t))), Set.Set (Term (Transition q t)))
+    (Bool, Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
   e adc' i eStar seen = foldl (f i adc' eStar) (False, Map.empty, seen) $ transitions adc'
   fix f i e r | (\(x, _, _) -> x) (f i e r) = True --if e already contains an accepting run, return true
               | (\(_, x, _) -> x) (f i e r) == e = False --if fixpoint is reached, but no accepting run found, return False
@@ -765,23 +788,24 @@ enumerateLanguage maxHeight !adc = fix (e adc) 0 Map.empty Map.empty Set.empty w
   euler = 2.71828182845
   delta r = let s' = s r in sizeQ * 2^s' * (fromIntegral $ fac s')
   n' = n adc
+  c'' = c' adc
   beta r = (fromIntegral $ 1 + d r) * n' * (1.0 + euler * (delta r))
   gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
   k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
   b r = max
         ((ceiling $ beta r) * (k r) * (ceiling $ gamma r))
         ((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
-  f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q (Set.Set (Term (Transition q t)))
-             -> (Map.Map Integer (Set.Set (Term t)), Map.Map q (Set.Set (Term (Transition q t))), Set.Set (Term (Transition q t)))
+  f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q (Set.Set (OrdTerm (Transition q t)))
+             -> (Map.Map Integer (Set.Set (Term t)), Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
              -> Transition q t
-             -> (Map.Map Integer (Set.Set (Term t)), Map.Map q (Set.Set (Term (Transition q t))), Set.Set (Term (Transition q t)))
+             -> (Map.Map Integer (Set.Set (Term t)), Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
   f i adc' eStar (res, es, seen) r = foldl' (g i) (res, es, seen) $ do --f is inner for loop (for all rho and phi_i in E*)
     let dom = fromState r
     let m = length $ dom
     rhos <- sequence $ do
           qI <- dom
           Just rhoIs <- return $ Map.lookup qI eStar
-          return $ Set.toList rhoIs
+          return $ map getTerm $ Set.toList rhoIs
     guard $ length rhos == m
     let rho = treeToTerm r rhos --for each rule build all terms over delta
     guard $ satisfies rho $ dConstraint r --But we still need to check, whether the constraints are satisfied.
@@ -791,24 +815,28 @@ enumerateLanguage maxHeight !adc = fix (e adc) 0 Map.empty Map.empty Set.empty w
     let b' = b r
     let vs = do
           p <- (pos rho)
-          guard $ not $ p `elem` (c' adc)
+          guard $ not $ p `elem` c''
           guard $ (length p) <= ((d r) + 1)
           Just s <- return $ symbolAtPos rho p --s is a transition, because rho is a term over delta
           Just rhos' <- return $ Map.lookup (target s) eStar
-          guard $ b' <= (toInteger $ length rhos')
+          --guard $ b' <= (toInteger $ length rhos')
           Just rhoP <- return $ termAtPos rho p
-          --let seqs = checkForSequence' rho p rhoP $ Set.toDescList rhos' 
-          --return $ (seqs) >= (b r)
-          return $ checkForSequence rho b' p rhoP $ Set.toDescList rhos' 
+          let descRhos = map getTerm $ Set.toDescList rhos'
+          Just smallerRuns <- return $ (findIndex (\x -> rhoP >>> x) descRhos >>= \i -> return $ drop i descRhos)
+          guard $ b' <= (toInteger $ length smallerRuns)
+          return $ not $ checkForSequence'' rho b' p smallerRuns --for all p there exists no sequence
     --guard $ and vs
     let trgt = target r
-    if (not $ null vs) && and vs then --elem trgt $ final adc' then
-      return (Map.singleton i (Set.singleton $ fmap symbol rho), eStar, Set.insert rho seen) else
-      return (Map.empty, Map.insertWith (Set.union) trgt (Set.singleton rho) eStar, Set.insert rho seen)
+    if and vs
+      then --only add terms to eStar, where no sequence exists
+      --return (Map.singleton i (Set.singleton $ fmap symbol rho), eStar, Set.insert rho seen) else
+      return (Map.empty, Map.insertWith (Set.union) trgt (Set.singleton $ OrdTerm rho) eStar, Set.insert rho seen)
+      else
+      return (Map.singleton i (Set.singleton $ fmap symbol rho), eStar, Set.insert rho seen)
   g i (res, es, seen) (res', rho, seen') = (Map.unionWith (Set.union) res res', Map.unionWith Set.union es rho, Set.union seen seen')  --g is outer for loop, for all transitions
-  e :: (Ord q, Ord t) => ADC q t -> Integer -> Map.Map q (Set.Set (Term (Transition q t))) ->
+  e :: (Ord q, Ord t) => ADC q t -> Integer -> Map.Map q (Set.Set (OrdTerm (Transition q t))) ->
      Map.Map Integer (Set.Set (Term t)) -> Set.Set (Term (Transition q t)) ->
-    (Map.Map Integer (Set.Set (Term t)), Map.Map q (Set.Set (Term (Transition q t))), Set.Set (Term (Transition q t)))
+    (Map.Map Integer (Set.Set (Term t)), Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
   e adc' i eStar terms seen = foldl' (f i adc' eStar) (terms, Map.empty, seen) $ transitions adc'
   fix f i e t m  | (\(_, x, _) -> x) (f i e t m) == e = (\(_, x, _) -> x) (f i e t m) --stop if fixpoint is reached
                | i == maxHeight = (\(_, x, _) -> x) (f i e t m)

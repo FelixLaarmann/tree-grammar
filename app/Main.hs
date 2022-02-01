@@ -14,15 +14,21 @@ import qualified Data.Set as Set
 main :: IO ()
 main = do
   --prettyPrintADC $ constructNfADC exampleRS
-  putStrLn "language of normal forms of boolRS' intersect boolGrammer is finite:"
-  --putStrLn "enumerateLanguage' (until fixpoint) of boolRS', fixed b = 1:"
+  --putStrLn "language of normal forms of boolRS' intersect boolGrammer is finite:"
+  putStrLn "Values of b (emptiness) for each transition:"
+  print $ map (newBempty inter') $ transitions inter'
+  putStrLn "Values of b (finiteness) for each transition:"
+  print $ map (newBfin inter') $ transitions inter'
+  putStrLn "Size of eStar for each iteration:"
   putStrLn ""
+  putStrLn "0:"
+  print $ length $ (Map.toList $ enumerateLanguage 0 $ inter') >>= (Set.toList . snd)
   putStrLn "1:"
-  print $ length $ (Map.toList $ enumerateLanguage 1 $ constructNfADC boolRS') >>= (Set.toList . snd)
+  print $ length $ (Map.toList $ enumerateLanguage 1 $ inter') >>= (Set.toList . snd)
   putStrLn "2:"
-  print $ length $ (Map.toList $ enumerateLanguage 2 $ constructNfADC boolRS') >>= (Set.toList . snd)
+  print $ length $ (Map.toList $ enumerateLanguage 2 $ inter') >>= (Set.toList . snd)
   putStrLn "3:"
-  print $ length $ (Map.toList $ enumerateLanguage 3 $ constructNfADC boolRS') >>= (Set.toList . snd)
+  print $ length $ (Map.toList $ enumerateLanguage 3 $ inter') >>= (Set.toList . snd)
   --putStrLn "4:"
   --print $ length $ (Map.toList $ enumerateLanguage 4 $ constructNfADC boolRS') >>= (Set.toList . snd)
   --mapM_ print $ Set.toList $ (enumerateLanguage 3 inter) Map.! 3
