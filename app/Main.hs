@@ -15,6 +15,7 @@ main :: IO ()
 main = do
   --prettyPrintADC $ constructNfADC exampleRS
   --putStrLn "language of normal forms of boolRS' intersect boolGrammer is finite:"
+  {-
   putStrLn "Values of b (emptiness) for each transition:"
   print $ map (newBempty inter') $ transitions inter'
   putStrLn "Values of b (finiteness) for each transition:"
@@ -31,10 +32,13 @@ main = do
   print $ length $ (Map.toList $ enumerateLanguage 3 $ inter') >>= (Set.toList . snd)
   putStrLn "4:"
   print $ length $ (Map.toList $ enumerateLanguage 4 $ inter') >>= (Set.toList . snd)
+  -}
   --putStrLn "4:"
   --print $ length $ (Map.toList $ enumerateLanguage 4 $ constructNfADC boolRS') >>= (Set.toList . snd)
   --mapM_ print $ Set.toList $ (enumerateLanguage 3 inter) Map.! 3
   putStrLn ""
+  print $ enumerateLanguage 5 inter
+  
   --putStrLn "Intersection of boolGrammar and boolRS' is finite:"
   --putStrLn ""
   --print $  languageIsFin inter'
@@ -51,7 +55,7 @@ main = do
   --print $ h inter
   --print $ h $ reduce inter
 
-inter = productADC (constructADC sortGrammar) (constructNfADC sortRS)
+inter = simplifyStates $ reduce $ productADC (constructADC sortGrammar) (constructNfADC sortRS')
 inter' = productADC (constructADC boolGrammar) (constructNfADC boolRS')
 inter'' = reduce $ productADC (constructNfADC boolRS) (constructNfADC boolRS) --nice minimization :D
 

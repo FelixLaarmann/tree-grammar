@@ -571,7 +571,8 @@ newBfin adc r =
     sizeQ :: Double
     sizeQ = fromIntegral $ (toInteger $ length $ states adc) * (h adc) 
     euler :: Double
-    euler = 2.71828182845
+    --euler = 2.71828182845
+    euler = sum $ map (\i -> 1 / (fromIntegral $ fac i)) [1 .. s r]
     delta r = let s' = s r in sizeQ * 2^s' * (fromIntegral $ fac s')
     beta r = (fromIntegral $ 1 + d r) * (n adc) * (1.0 + euler * (delta r))
     gamma r = let d' = fromIntegral $ d r in let n' = n adc in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
@@ -586,7 +587,8 @@ newBempty adc r =
     sizeQ :: Double
     sizeQ = fromIntegral $ length $ states adc
     euler :: Double
-    euler = 2.71828182845
+    --euler = 2.71828182845
+    euler = sum $ map (\i -> 1 / (fromIntegral $ fac i)) [1 .. s r]
     delta r = let s' = s r in sizeQ * 2^s' * (fromIntegral $ fac s')
     beta r = (fromIntegral $ 1 + d r) * (n adc) * (1.0 + euler * (delta r))
     gamma r = let d' = fromIntegral $ d r in let n' = n adc in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
@@ -780,6 +782,59 @@ reduce adc = ADC (Set.toList $ marked adc ) (qf $ marked adc) (deltaReduced $ ma
   fix f s | f s == s = s
           | otherwise = fix f (f s)
 
+ftaDeterminize' :: (Ord q, Eq t) => ADC q t -> ADC [q] t
+ftaDeterminize' adc = ADC (nub $ qD) qDf $ nub deltaD where
+  qDf = nub $ [f |f <- qD, not $ null $ intersect f $ final adc]
+  (qD, deltaD) = fix (g adc) ([], [])
+  f :: (Ord q, Eq t) => ADC q t -> ([[q]], [Transition [q] t]) -> t -> ([[q]], [Transition [q] t])
+  f adc' (q,d) fn = (insert newQ q, union d newR) where
+    newQ = nub $ do
+      r <- transitions adc'
+      guard $ fn == symbol r
+      let test = do
+            qi <- fromState r
+            return $ not $ null $ filter (\si -> qi `elem` si) q
+      guard $ and test
+      return $ target r
+    newR = nub $ do
+      r <- transitions adc'
+      guard $ fn == symbol r
+      dom <- sequence $ do
+            qi <- fromState r
+            return $ filter (\si -> qi `elem` si) q
+      guard $ (length dom) == (length $ fromState r)
+      return $ Transition fn dom newQ $ dConstraint r
+  g :: (Ord q, Eq t) => ADC q t -> ([[q]], [Transition [q] t]) -> ([[q]], [Transition [q] t])
+  g adc' p = foldl (f adc') p $ nub $ map symbol $ transitions adc'
+  fix f p | (snd $ f p) == (snd p) = p
+          | otherwise = fix f (f p)
+
+ftaDeterminize :: (Ord q, Eq t) => ADC q t -> ADC Int t
+ftaDeterminize = reduce . simplifyStates . ftaDeterminize'
+
+ftaEmptiness ::  Ord q => ADC q t -> Bool
+ftaEmptiness = null . final . reduce
+
+ftaInfiniteness :: Ord q => ADC q t -> Bool
+ftaInfiniteness adc = not $ null $ intersect loops $ fix reach $ final $ reduce adc where
+  trans = transitions adc
+  loops = do
+    q <- states adc
+    guard $ q `elem` (loop q)
+    return q
+  loop q = do
+    r <- trans
+    guard $ target r == q
+    fix reach $ fromState r
+  reach qs = union qs $ nub $ do
+    q <- qs
+    r <- filter ((q ==) . target) trans
+    fromState r
+  fix f x | f x == x = x
+          | otherwise = fix f (f x)
+
+ftaFiniteness :: Ord q => ADC q t -> Bool
+ftaFiniteness = not . ftaInfiniteness
 
 {-
 Everything below is for Debugging...
@@ -817,6 +872,7 @@ enumerateLanguage maxHeight !adc = fix (e adc) 0 Map.empty Map.empty Set.empty w
     --and test, whether we have analysed rho before
     --let trgt = target r
     guard $ Set.notMember rho seen
+    {-
     let b' = b r
     let vs = do
           p <- (pos rho)
@@ -831,20 +887,21 @@ enumerateLanguage maxHeight !adc = fix (e adc) 0 Map.empty Map.empty Set.empty w
           guard $ b' <= (toInteger $ length smallerRuns)
           return $ not $ checkForSequence'' rho b' p smallerRuns --for all p there exists no sequence
     --guard $ and vs
+    -}
     let trgt = target r
-    if and vs
+    if trgt `elem` final adc'--and vs
       then --only add terms to eStar, where no sequence exists
       --return (Map.singleton i (Set.singleton $ fmap symbol rho), eStar, Set.insert rho seen) else
-      return (Map.empty, Map.insertWith (Set.union) trgt (Set.singleton $ OrdTerm rho) eStar, Set.insert rho seen)
+      return (Map.singleton i (Set.singleton $ fmap symbol rho), Map.insertWith (Set.union) trgt (Set.singleton $ OrdTerm rho) eStar, Set.insert rho seen)
       else
-      return (Map.singleton i (Set.singleton $ fmap symbol rho), eStar, Set.insert rho seen)
+      return (Map.empty, Map.insertWith (Set.union) trgt (Set.singleton $ OrdTerm rho) eStar, Set.insert rho seen)
   g i (res, es, seen) (res', rho, seen') = (Map.unionWith (Set.union) res res', Map.unionWith Set.union es rho, Set.union seen seen')  --g is outer for loop, for all transitions
   e :: (Ord q, Ord t) => ADC q t -> Integer -> Map.Map q (Set.Set (OrdTerm (Transition q t))) ->
      Map.Map Integer (Set.Set (Term t)) -> Set.Set (Term (Transition q t)) ->
     (Map.Map Integer (Set.Set (Term t)), Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
   e adc' i eStar terms seen = foldl' (f i adc' eStar) (terms, Map.empty, seen) $ transitions adc'
-  fix f i e t m  | (\(_, x, _) -> x) (f i e t m) == e = (\(_, x, _) -> x) (f i e t m) --stop if fixpoint is reached
-               | i == maxHeight = (\(_, x, _) -> x) (f i e t m)
+  fix f i e t m  | (\(_, x, _) -> x) (f i e t m) == e = (\(x, _, _) -> x) (f i e t m) --stop if fixpoint is reached
+               | i == maxHeight = (\(x, _, _) -> x) (f i e t m)
                | otherwise = fix f (i+1)
                  ((\(_, x, _) -> x) $ f i e t m) ((\(x, _, _) -> x) $ f i e t m) ((\(_, _, x) -> x) $ f i e t m)
 {-

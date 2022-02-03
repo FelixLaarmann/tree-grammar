@@ -136,7 +136,7 @@ sortRS = RS
 
 sortRS' :: RS String IntVar
 sortRS' = RS
-  [("values", 0), ("id", 0), ("inv", 0), ("sortmap", 0), ("default", 0), ("app", 2)]
+  [("values", 0), ("id", 0), ("inv", 0), ("sortmap", 0), ("min", 0), ("default", 0), ("app", 2)]
   [
   (
     app (UTerm $ SymbolV "id") (UVar $ IntVar 0),
@@ -147,11 +147,9 @@ sortRS' = RS
     UVar $ IntVar 0
   ), -- inv(inv(x)) -> x
   (
-    app
-    (app (UTerm $ SymbolV "sortmap") (UVar $ IntVar 0))
-    (app (app (UTerm $ SymbolV "sortmap") (UVar $ IntVar 1)) (UVar $ IntVar 2)),
-    app (app (UTerm $ SymbolV "sortmap") (UVar $ IntVar 0)) (UVar $ IntVar 2)
-  )
+    app (UTerm $ SymbolV "min") (app (UVar $ IntVar 0) (UVar $ IntVar 1)),
+    UVar $ IntVar 0
+  ) --min
   ]
 
 -- app (app (min) (default)) (app (app (sortmap) (id)) (values))
@@ -184,19 +182,19 @@ boolRS = RS
     (
       UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "F")) (UTerm $ SymbolV "F"),
       UTerm $ SymbolV "F"
-    ),
+    ), --AND(F,F) -> F
     (
       UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "F")) (UTerm $ SymbolV "T"),
       UTerm $ SymbolV "F"
-    ),
+    ), --AND(F,T) -> F
     (
       UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "T")) (UTerm $ SymbolV "F"),
       UTerm $ SymbolV "F"
-    ),
+    ), --AND(T,F) -> F
     (
       UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "T")) (UTerm $ SymbolV "T"),
       UTerm $ SymbolV "T"
-    )
+    ) --AND(T,T) -> T
   ]
 
 boolRS' :: RS String IntVar
@@ -206,31 +204,49 @@ boolRS' = RS
     (
       UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "F")) (UVar $ IntVar 0),
       UTerm $ SymbolV "F"
-    ),
+    ), --AND(F,x) -> F
     (
       UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UVar $ IntVar 0)) (UTerm $ SymbolV "F"),
       UTerm $ SymbolV "F"
-    ),
+    ), --AND(x,F) -> F
     (
       UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UVar $ IntVar 0)) (UVar $ IntVar 0),
       UVar $ IntVar 0
-    )
+    ) --AND(x,x) -> x
+  ]
+
+boolRS'' :: RS String IntVar
+boolRS'' = RS
+  [("T", 0), ("F", 0), ("AND", 2)]
+  [
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "F")) (UVar $ IntVar 0),
+      UTerm $ SymbolV "F"
+    ), --AND(F,x) -> F
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UVar $ IntVar 0)) (UTerm $ SymbolV "F"),
+      UTerm $ SymbolV "F"
+    ), --AND(x,F) -> F
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "T")) (UTerm $ SymbolV "T"),
+      UTerm $ SymbolV "T"
+    ) --AND(T,T) -> T
   ] 
 
 
-boolTerminals' = ["F", "AND"]
+falseTerminals = ["F", "AND"]
 
-boolNonTerminals' = [0]
+falseNonTerminals = [0]
 
-boolGrammar' :: TreeGrammar String Int
-boolGrammar' = TreeGrammar 0 boolNonTerminals' boolTerminals' rules where
+falseGrammar :: TreeGrammar String Int
+falseGrammar = TreeGrammar 0 falseNonTerminals falseTerminals rules where
   rules = [
     (0, Terminal "F" []),
     (0, Terminal "AND" [NonTerminal 0, NonTerminal 0])
           ]
 
-boolRS'' :: RS String IntVar
-boolRS'' = RS
+falseRS :: RS String IntVar
+falseRS = RS
   [("F", 0), ("AND", 2)]
   [
     (
@@ -245,4 +261,145 @@ boolRS'' = RS
       UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UVar $ IntVar 0)) (UVar $ IntVar 0),
       UVar $ IntVar 0
     )
-  ] 
+  ]
+
+fullBoolTerminals = ["T", "F", "AND", "OR", "NOT"]
+
+fullBoolNonTerminals = [0]
+
+fullBoolGrammar :: TreeGrammar String Int
+fullBoolGrammar = TreeGrammar 0 fullBoolNonTerminals fullBoolTerminals rules where
+  rules = [
+    (0, Terminal "T" []),
+    (0, Terminal "F" []),
+    (0, Terminal "AND" [NonTerminal 0, NonTerminal 0]),
+    (0, Terminal "OR" [NonTerminal 0, NonTerminal 0]),
+    (0, Terminal "NOT" [NonTerminal 0])
+          ]
+
+fullBoolRS :: RS String IntVar
+fullBoolRS = RS
+  [("T", 0), ("F", 0), ("AND", 2), ("OR", 2), ("NOT", 1)]
+  [
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "F")) (UVar $ IntVar 0),
+      UTerm $ SymbolV "F"
+    ), --AND(F,x) -> F
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UVar $ IntVar 0)) (UTerm $ SymbolV "F"),
+      UTerm $ SymbolV "F"
+    ), --AND(x,F) -> F
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "T")) (UTerm $ SymbolV "T"),
+      UTerm $ SymbolV "T"
+    ), --AND(T,T) -> T
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "OR") (UTerm $ SymbolV "T")) (UVar $ IntVar 0),
+      UTerm $ SymbolV "T"
+    ), --OR(T,x) -> T
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "OR") (UVar $ IntVar 0)) (UTerm $ SymbolV "T"),
+      UTerm $ SymbolV "T"
+    ), --OR(x,T) -> T
+    ( 
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "OR") (UTerm $ SymbolV "F")) (UTerm $ SymbolV "F"),
+      UTerm $ SymbolV "F"
+    ), --OR(F,F) -> F
+    (
+      UTerm $ AppV (UTerm $ SymbolV "NOT")  (UTerm $ AppV (UTerm $ SymbolV "NOT") (UVar $ IntVar 0)),
+      UVar $ IntVar 0
+    ), --NOT(NOT(x)) -> x
+    (
+      UTerm $ AppV (UTerm $ SymbolV "NOT")  (UTerm $ SymbolV "T"),
+      UTerm $ SymbolV "F"
+    ), --NOT(T) -> F
+    (
+      UTerm $ AppV (UTerm $ SymbolV "NOT")  (UTerm $ SymbolV "F"),
+      UTerm $ SymbolV "T"
+    ) --NOT(F) -> T
+  ]
+
+{-
+qbfTerminals n = ["T", "F", "AND", "OR", "NOT", "FORALL", "EXISTS"] ++ map show [0..n]
+
+qbfNonTerminals = [0]
+
+--quantified boolean formulars with DeBruijn indexed quantors
+qbfGrammar :: Int -> TreeGrammar String Int
+qbfGrammar n = TreeGrammar 0 qbfNonTerminals (qbfTerminals n) rules where
+  rules = [
+    (0, Terminal "T" []),
+    (0, Terminal "F" []),
+    (0, Terminal "AND" [NonTerminal 0, NonTerminal 0]),
+    (0, Terminal "OR" [NonTerminal 0, NonTerminal 0]),
+    (0, Terminal "NOT" [NonTerminal 0]),
+    (0, Terminal "FORALL" [NonTerminal 0]),
+    (0, Terminal "EXISTS" [NonTerminal 0])
+          ] ++ map (\v -> (0, Terminal (show n) [])) [0..n]
+
+qbfRS :: Int -> RS String IntVar
+qbfRS n = if n < 0 then RS [] [] else RS
+  ([("T", 0), ("F", 0), ("AND", 2), ("OR", 2), ("NOT", 1), ("FORALL", 1), ("EXISTS", 1)] ++ map (\v -> (show v, 0)) [0..n])
+  [
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "F")) (UVar $ IntVar 0),
+      UTerm $ SymbolV "F"
+    ), --AND(F,x) -> F
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UVar $ IntVar 0)) (UTerm $ SymbolV "F"),
+      UTerm $ SymbolV "F"
+    ), --AND(x,F) -> F
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "T")) (UTerm $ SymbolV "T"),
+      UTerm $ SymbolV "T"
+    ), --AND(T,T) -> T
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "OR") (UTerm $ SymbolV "T")) (UVar $ IntVar 0),
+      UTerm $ SymbolV "T"
+    ), --OR(T,x) -> T
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "OR") (UVar $ IntVar 0)) (UTerm $ SymbolV "T"),
+      UTerm $ SymbolV "T"
+    ), --OR(x,T) -> T
+    (
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "OR") (UTerm $ SymbolV "F")) (UTerm $ SymbolV "F"),
+      UTerm $ SymbolV "F"
+    ), --OR(F,F) -> F
+    (
+      UTerm $ AppV (UTerm $ SymbolV "NOT")  (UTerm $ AppV (UTerm $ SymbolV "NOT") (UVar $ IntVar 0)),
+      UVar $ IntVar 0
+    ), --NOT(NOT(x)) -> x
+    (
+      UTerm $ AppV (UTerm $ SymbolV "NOT")  (UTerm $ SymbolV "T"),
+      UTerm $ SymbolV "F"
+    ), --NOT(T) -> F
+    (
+      UTerm $ AppV (UTerm $ SymbolV "NOT")  (UTerm $ SymbolV "F"),
+      UTerm $ SymbolV "T"
+    ), --NOT(F) -> T
+    (
+      UTerm $ AppV (UTerm $ SymbolV "FORALL")  (UTerm $ SymbolV "F"),
+      UTerm $ SymbolV "F"
+    ), --FORALL(F) -> F
+    (
+      UTerm $ AppV (UTerm $ SymbolV "FORALL")  (UTerm $ SymbolV "T"),
+      UTerm $ SymbolV "T"
+    ), --FORALL(T) -> T
+    (
+      UTerm $ AppV (UTerm $ SymbolV "EXISTS")  (UTerm $ SymbolV "F"),
+      UTerm $ SymbolV "F"
+    ), --EXISTS(F) -> F
+    (
+      UTerm $ AppV (UTerm $ SymbolV "EXISTS")  (UTerm $ SymbolV "T"),
+      UTerm $ SymbolV "T"
+    ), --EXISTS(T) -> T
+    (
+      UTerm $ AppV (UTerm $ SymbolV "FORALL")  (UTerm $ SymbolV "0"),
+      UTerm $ SymbolV "0"
+    ), --FORALL(F) -> F
+    (
+      UTerm $ AppV (UTerm $ SymbolV "EXISTS")  (UTerm $ SymbolV "0"),
+      UTerm $ SymbolV "0"
+    ) --EXISTS(F) -> F
+  ]
+-}
