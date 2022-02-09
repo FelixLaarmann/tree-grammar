@@ -517,8 +517,9 @@ c' adc = do --TODO c' can be optimized similar to s
     return suf
 
 --s(A)is the number of distinct suffixes of positions π,π′ in an atomic constraint π̸=π′ in a (!!!) rule of A
-s :: Transition q t -> Int
-s r = length $ do
+s :: ADC q t -> Int
+s adc = length $ nub $ do
+    r <- transitions adc
     atom <- (modSym $ nub $ join $ dConstraint r) --distinct atomic constraints
     let pi = fst atom
     let pi' = snd atom
@@ -529,14 +530,16 @@ s r = length $ do
       suffixes (_:xs) = go xs
         where go [] = [] : []
               go f@(_:t) = f: go t
+
 -- n(A′) is the maximum number of atomic constraints in a rule of A′
 n :: ADC q t -> Double
 n adc = fromIntegral $ maximum $ do 
     r <- transitions adc
     return $ length $ join $ dConstraint r
 --d(A′) is the maximum length of |π| or |π′| in an atomic constraint π̸=π′ in a (!!!) rule of A′
-d :: Transition q t -> Int
-d r = maximum $ 0 : do 
+d :: ADC q t -> Int
+d adc = maximum $ 0 : do
+    r <- transitions adc
     pi <- (nub $ join $ dConstraint r) >>= \(a,b) -> [a,b]
     return $ length pi
 
@@ -548,7 +551,7 @@ fac i = product [1..i]
 
 oldB :: Eq t => ADC q t -> Transition q t -> Integer
 oldB adc r = let sizeQ = toInteger $ length $ states adc in
-    let d' = fromIntegral $ d r in
+    let d' = fromIntegral $ d adc in
       if d' == 0
       then
         max
@@ -562,53 +565,59 @@ oldB adc r = let sizeQ = toInteger $ length $ states adc in
           gamma = 331.4348136746072
           delta = 11.770780163555855
 
-newBfin :: Eq t => ADC q t -> Transition q t -> Integer
-newBfin adc r =
+newBfin :: Eq t => ADC q t -> Integer
+newBfin adc =
   max
-  ((floor $ beta r) * (k r) + (floor $ gamma r))
-  ((floor $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
+  ((floor beta) * (k) + (floor  gamma))
+  ((floor sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
   where
     sizeQ :: Double
     sizeQ = fromIntegral $ (toInteger $ length $ states adc) * (h adc) 
     euler :: Double
     --euler = 2.71828182845
-    euler = sum $ map (\i -> 1 / (fromIntegral $ fac i)) [1 .. s r]
-    delta r = let s' = s r in sizeQ * 2^s' * (fromIntegral $ fac s')
-    beta r = (fromIntegral $ 1 + d r) * (n adc) * (1.0 + euler * (delta r))
-    gamma r = let d' = fromIntegral $ d r in let n' = n adc in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
-    k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
+    euler = sum $ map (\i -> 1 / (fromIntegral $ fac i)) [1 .. s adc]
+    delta = let s' = s adc in sizeQ * 2^s' * (fromIntegral $ fac s')
+    beta = (fromIntegral $ 1 + d adc) * (n adc) * (1.0 + euler * delta)
+    gamma = let d' = fromIntegral $ d adc in let n' = n adc in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta)
+    k = ceiling $ (beta + sqrt (beta^2 + (4 * gamma))) / 2
 
-newBempty :: Eq t => ADC q t -> Transition q t -> Integer
-newBempty adc r =
+newBempty :: Eq t => ADC q t -> Integer
+newBempty adc =
   max
-  ((floor $ beta r) * (k r) + (floor $ gamma r))
+  ((floor beta) * (k) + (floor gamma))
   ((floor $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
   where
     sizeQ :: Double
     sizeQ = fromIntegral $ length $ states adc
     euler :: Double
     --euler = 2.71828182845
-    euler = sum $ map (\i -> 1 / (fromIntegral $ fac i)) [1 .. s r]
-    delta r = let s' = s r in sizeQ * 2^s' * (fromIntegral $ fac s')
-    beta r = (fromIntegral $ 1 + d r) * (n adc) * (1.0 + euler * (delta r))
-    gamma r = let d' = fromIntegral $ d r in let n' = n adc in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
-    k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
+    euler = sum $ map (\i -> 1 / (fromIntegral $ fac i)) [1 .. s adc]
+    delta = let s' = s adc in sizeQ * 2^s' * (fromIntegral $ fac s')
+    beta = (fromIntegral $ 1 + d adc) * (n adc) * (1.0 + euler * (delta))
+    gamma = let d' = fromIntegral $ d adc in let n' = n adc in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta)
+    k = ceiling $ (beta + sqrt (beta^2 + (4 * gamma))) / 2
 
 languageIsEmpty :: (Ord q, Ord t) => ADC q t -> Bool
 languageIsEmpty !adc = not $ fix (e adc) 0 Map.empty Set.empty where
+  {-
   sizeQ :: Double
   sizeQ = fromIntegral $ length $ states adc
   euler :: Double
   euler = 2.71828182845
   delta r = let s' = s r in sizeQ * 2^s' * (fromIntegral $ fac s')
   n' = n adc
+  -}
   c'' = c' adc
+  {-
   beta r = (fromIntegral $ 1 + d r) * n' * (1.0 + euler * (delta r))
   gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
   k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
   b r = max
         ((ceiling $ beta r) * (k r) + (ceiling $ gamma r))
         ((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
+  -}
+  b = newBempty adc
+  d' = d adc
   f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q (Set.Set (OrdTerm (Transition q t)))
              -> (Bool, Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
              -> Transition q t
@@ -624,19 +633,18 @@ languageIsEmpty !adc = not $ fix (e adc) 0 Map.empty Set.empty where
     let rho = treeToTerm r rhos --for each rule build all terms over delta
     guard $ satisfies rho $ dConstraint r --But we still need to check, whether the constraints are satisfied.
     guard $ Set.notMember rho seen --and test, whether we have analysed rho before
-    let b' = b r
     let vs = do
           p <- (pos rho)
           guard $ not $ p `elem` c''
-          guard $ (length p) <= ((d r) + 1)
+          guard $ (length p) <= (d' + 1)
           Just s <- return $ symbolAtPos rho p --s is a transition, because rho is a term over delta
           Just rhos' <- return $ Map.lookup (target s) eStar
           --guard $ b' <= (toInteger $ length rhos')
           Just rhoP <- return $ termAtPos rho p
           let descRhos = map getTerm $ Set.toDescList rhos'
           Just smallerRuns <- return $ (findIndex (\x -> rhoP >>>> x) descRhos >>= \i -> return $ drop i descRhos)
-          guard $ b' <= (toInteger $ length smallerRuns)
-          return $ not $ checkForSequence'' rho b' p smallerRuns --for all p there exists no sequence
+          guard $ b <= (toInteger $ length smallerRuns)
+          return $ not $ checkForSequence'' rho b p smallerRuns --for all p there exists no sequence
     let trgt = target r
     let stop' = trgt `elem` (final adc')
     if and vs
@@ -674,6 +682,7 @@ languageIsEmpty !adc = not $ fix (e adc) 0 Map.empty Set.empty where
 languageIsFin :: (Ord q, Ord t) => ADC q t -> Bool
 languageIsFin !adc = not $ fix (e adc) 0 Map.empty Set.empty where
   --fac i = product [1..i]
+  {-
   h :: Integer
   h = div (371828182845 * (toInteger $ length $ states adc) *
            (2^(toInteger $ c adc)) * (fac $ toInteger $ c adc) * (1 + (toInteger $ pi adc))) 100000000000
@@ -683,13 +692,19 @@ languageIsFin !adc = not $ fix (e adc) 0 Map.empty Set.empty where
   euler = 2.71828182845
   delta r = let s' = s r in sizeQ * 2^s' * (fromIntegral $ fac s')
   n' = n adc
+  -}
   c'' = c' adc
+  {-
   beta r = (fromIntegral $ 1 + d r) * n' * (1.0 + euler * (delta r))
   gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
   k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
   b r = max
         ((ceiling $ beta r) * (k r) + (ceiling $ gamma r))
         ((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
+  -}
+  h' = h adc
+  b = newBfin adc
+  d' = d adc
   f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q (Set.Set (OrdTerm (Transition q t)))
              -> (Bool, Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
              -> Transition q t
@@ -705,21 +720,20 @@ languageIsFin !adc = not $ fix (e adc) 0 Map.empty Set.empty where
     let rho = treeToTerm r rhos --for each rule build all terms over delta
     guard $ satisfies rho $ dConstraint r --But we still need to check, whether the constraints are satisfied.
     guard $ Set.notMember rho seen --and test, whether we have analysed rho before
-    let b' = b r
     let vs = do
           p <- (pos rho)
           guard $ not $ p `elem` c''
-          guard $ (length p) <= ((d r) + 1)
+          guard $ (length p) <= (d' + 1)
           Just s <- return $ symbolAtPos rho p --s is a transition, because rho is a term over delta
           Just rhos' <- return $ Map.lookup (target s) eStar
           --guard $ b' <= (toInteger $ length rhos')
           Just rhoP <- return $ termAtPos rho p
           let descRhos = map getTerm $ Set.toDescList rhos'
           Just smallerRuns <- return $ (findIndex (\x -> rhoP >>>> x) descRhos >>= \i -> return $ drop i descRhos)
-          guard $ b' <= (toInteger $ length smallerRuns)
-          return $ not $ checkForSequence'' rho b' p smallerRuns --for all p there exists no sequence
+          guard $ b <= (toInteger $ length smallerRuns)
+          return $ not $ checkForSequence'' rho b p smallerRuns --for all p there exists no sequence
     let trgt = target r
-    let stop' = trgt `elem` (final adc') && i > h
+    let stop' = trgt `elem` (final adc') && i > h'
     if and vs
       then --only add terms to eStar, where no sequence exists
       --return (stop', eStar, Set.insert rho seen) else
@@ -816,26 +830,50 @@ ftaEmptiness ::  Ord q => ADC q t -> Bool
 ftaEmptiness = null . final . reduce
 
 ftaInfiniteness :: Ord q => ADC q t -> Bool
-ftaInfiniteness adc = not $ null $ intersect loops $ fix reach $ final $ reduce adc where
-  trans = transitions adc
+ftaInfiniteness adc = (not $ null $ final adc') && (checkLoops $ fix reach $ final adc') where
+  adc' = reduce adc
+  trans = transitions adc'
+  states' = states adc'
   loops = do
-    q <- states adc
+    q <- states'
     guard $ q `elem` (loop q)
     return q
   loop q = do
     r <- trans
     guard $ target r == q
     fix reach $ fromState r
-  reach qs = union qs $ nub $ do
+  reach' qs = union qs $ nub $ do
+    q <- qs
+    r <- filter ((q ==) . target) trans
+    fromState r
+  reach qs =  nub $ qs ++ do
     q <- qs
     r <- filter ((q ==) . target) trans
     fromState r
   fix f x | f x == x = x
           | otherwise = fix f (f x)
+  checkLoops xs = or $ do
+    x <- xs
+    return $ x `elem` (loop x)    
 
 ftaFiniteness :: Ord q => ADC q t -> Bool
-ftaFiniteness = not . ftaInfiniteness
-
+ftaFiniteness adc = (not $ null $ final adc') && (not $ checkLoops $ fix reach $ final adc') where
+  adc' = reduce adc
+  trans = transitions adc'
+  states' = states adc'
+  loop q = do
+    r <- trans
+    guard $ target r == q
+    fix reach $ fromState r
+  reach qs =  nub $ qs ++ do
+    q <- qs
+    r <- filter ((q ==) . target) trans
+    fromState r
+  fix f x | f x == x = x
+          | otherwise = fix f (f x)
+  checkLoops xs = or $ do
+    x <- xs
+    return $ x `elem` (loop x)    
 {-
 Everything below is for Debugging...
 -}

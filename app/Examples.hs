@@ -149,7 +149,7 @@ sortRS' = RS
   (
     app (UTerm $ SymbolV "min") (app (UVar $ IntVar 0) (UVar $ IntVar 1)),
     UVar $ IntVar 0
-  ) --min
+  ) --app (min) (app x y) -> x
   ]
 
 -- app (app (min) (default)) (app (app (sortmap) (id)) (values))
@@ -319,27 +319,9 @@ fullBoolRS = RS
     ) --NOT(F) -> T
   ]
 
-{-
-qbfTerminals n = ["T", "F", "AND", "OR", "NOT", "FORALL", "EXISTS"] ++ map show [0..n]
-
-qbfNonTerminals = [0]
-
---quantified boolean formulars with DeBruijn indexed quantors
-qbfGrammar :: Int -> TreeGrammar String Int
-qbfGrammar n = TreeGrammar 0 qbfNonTerminals (qbfTerminals n) rules where
-  rules = [
-    (0, Terminal "T" []),
-    (0, Terminal "F" []),
-    (0, Terminal "AND" [NonTerminal 0, NonTerminal 0]),
-    (0, Terminal "OR" [NonTerminal 0, NonTerminal 0]),
-    (0, Terminal "NOT" [NonTerminal 0]),
-    (0, Terminal "FORALL" [NonTerminal 0]),
-    (0, Terminal "EXISTS" [NonTerminal 0])
-          ] ++ map (\v -> (0, Terminal (show n) [])) [0..n]
-
-qbfRS :: Int -> RS String IntVar
-qbfRS n = if n < 0 then RS [] [] else RS
-  ([("T", 0), ("F", 0), ("AND", 2), ("OR", 2), ("NOT", 1), ("FORALL", 1), ("EXISTS", 1)] ++ map (\v -> (show v, 0)) [0..n])
+fullBoolRS' :: RS String IntVar
+fullBoolRS' = RS
+  [("T", 0), ("F", 0), ("AND", 2), ("OR", 2), ("NOT", 1)]
   [
     (
       UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "F")) (UVar $ IntVar 0),
@@ -350,9 +332,9 @@ qbfRS n = if n < 0 then RS [] [] else RS
       UTerm $ SymbolV "F"
     ), --AND(x,F) -> F
     (
-      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "T")) (UTerm $ SymbolV "T"),
-      UTerm $ SymbolV "T"
-    ), --AND(T,T) -> T
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UVar $ IntVar 0)) (UVar $ IntVar 0),
+      UVar $ IntVar 0
+    ), --AND(x,x) -> x
     (
       UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "OR") (UTerm $ SymbolV "T")) (UVar $ IntVar 0),
       UTerm $ SymbolV "T"
@@ -361,9 +343,9 @@ qbfRS n = if n < 0 then RS [] [] else RS
       UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "OR") (UVar $ IntVar 0)) (UTerm $ SymbolV "T"),
       UTerm $ SymbolV "T"
     ), --OR(x,T) -> T
-    (
-      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "OR") (UTerm $ SymbolV "F")) (UTerm $ SymbolV "F"),
-      UTerm $ SymbolV "F"
+    ( 
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "OR") (UVar $ IntVar 0)) (UVar $ IntVar 0),
+      UVar $ IntVar 0
     ), --OR(F,F) -> F
     (
       UTerm $ AppV (UTerm $ SymbolV "NOT")  (UTerm $ AppV (UTerm $ SymbolV "NOT") (UVar $ IntVar 0)),
@@ -376,30 +358,65 @@ qbfRS n = if n < 0 then RS [] [] else RS
     (
       UTerm $ AppV (UTerm $ SymbolV "NOT")  (UTerm $ SymbolV "F"),
       UTerm $ SymbolV "T"
-    ), --NOT(F) -> T
-    (
-      UTerm $ AppV (UTerm $ SymbolV "FORALL")  (UTerm $ SymbolV "F"),
-      UTerm $ SymbolV "F"
-    ), --FORALL(F) -> F
-    (
-      UTerm $ AppV (UTerm $ SymbolV "FORALL")  (UTerm $ SymbolV "T"),
-      UTerm $ SymbolV "T"
-    ), --FORALL(T) -> T
-    (
-      UTerm $ AppV (UTerm $ SymbolV "EXISTS")  (UTerm $ SymbolV "F"),
-      UTerm $ SymbolV "F"
-    ), --EXISTS(F) -> F
-    (
-      UTerm $ AppV (UTerm $ SymbolV "EXISTS")  (UTerm $ SymbolV "T"),
-      UTerm $ SymbolV "T"
-    ), --EXISTS(T) -> T
-    (
-      UTerm $ AppV (UTerm $ SymbolV "FORALL")  (UTerm $ SymbolV "0"),
-      UTerm $ SymbolV "0"
-    ), --FORALL(F) -> F
-    (
-      UTerm $ AppV (UTerm $ SymbolV "EXISTS")  (UTerm $ SymbolV "0"),
-      UTerm $ SymbolV "0"
-    ) --EXISTS(F) -> F
+    ) --NOT(F) -> T
   ]
+
+{-
+Labyrinth-Example
+-}
+
+--Build the grammar for a n*m (n columns, m rows) labyrinth. Therefore we need the positions of obstacles and the starting position
+
+labyrinthTerminals = ["UP", "DOWN", "LEFT", "RIGHT", "START"]
+
+labyrinthGrammar :: Int -> Int -> [(Int, Int)] -> (Int, Int) -> (Int, Int) -> TreeGrammar String (Int, Int)
+labyrinthGrammar n m obstacles start goal = TreeGrammar goal labyrinthNonTerminals labyrinthTerminals rules where
+  labyrinthNonTerminals = [(x,y) | x <- [0..n], y <- [0..m], (x,y) `notElem` obstacles]
+  ups = do
+    (x,y) <- labyrinthNonTerminals
+    let pUp = (x, y+1) 
+    guard $ pUp `elem` labyrinthNonTerminals
+    return $ ((x,y), Terminal "UP" [NonTerminal pUp])
+  downs = do
+    (x,y) <- labyrinthNonTerminals
+    let pDown = (x,y-1)
+    guard $ pDown `elem` labyrinthNonTerminals
+    return $ ((x,y), Terminal "DOWN" [NonTerminal pDown])
+  lefts = do
+    (x,y) <- labyrinthNonTerminals
+    let pLeft = (x+1, y)
+    guard $ pLeft `elem` labyrinthNonTerminals
+    return $ ((x,y), Terminal "LEFT" [NonTerminal pLeft])
+  rights = do
+    (x,y) <- labyrinthNonTerminals
+    let pRight = (x-1, y)
+    guard $ pRight `elem` labyrinthNonTerminals
+    return $ ((x,y), Terminal "RIGHT" [NonTerminal pRight])
+  rules = (start, Terminal "START" []) : (ups ++ downs ++ lefts ++ rights)
+
+labyrinthRS :: RS String IntVar
+labyrinthRS  = RS
+  [("UP", 1),("DOWN", 1),("LEFT", 1),("RIGHT", 1),("START", 0)]
+  [
+    (
+      UTerm $ AppV (UTerm $ SymbolV "UP")  (UTerm $ AppV (UTerm $ SymbolV "DOWN") (UVar $ IntVar 0)),
+      UVar $ IntVar 0
+    ), --UP(DOWN(x)) -> x
+    (
+      UTerm $ AppV (UTerm $ SymbolV "DOWN")  (UTerm $ AppV (UTerm $ SymbolV "UP") (UVar $ IntVar 0)),
+      UVar $ IntVar 0
+    ), --DOWN(UP(x)) -> x
+    (
+      UTerm $ AppV (UTerm $ SymbolV "LEFT")  (UTerm $ AppV (UTerm $ SymbolV "RIGHT") (UVar $ IntVar 0)),
+      UVar $ IntVar 0
+    ), --LEFT(RIGHT(x)) -> x
+    (
+      UTerm $ AppV (UTerm $ SymbolV "RIGHT")  (UTerm $ AppV (UTerm $ SymbolV "LEFT") (UVar $ IntVar 0)),
+      UVar $ IntVar 0
+    ) --RIGHT(LEFT(x)) -> x
+  ] -- ++ circleRules n)
+
+{-
+circleRules n = map (\xs -> (toUTerm xs, UVar $ IntVar 0)) $ nub $ permutations (["UP", "DOWN", "LEFT", "RIGHT"] >>= ((take n) . repeat)) where
+  toUTerm = foldr (\t term -> UTerm $ AppV (UTerm $ SymbolV t) term) (UVar $ IntVar 0)
 -}

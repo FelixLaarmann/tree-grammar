@@ -33,9 +33,9 @@ executable tree-grammar
     ghc-options:
       -O2
       -threaded
---      -fprof-auto
---      "-with-rtsopts=-N -p -s -h -i0.1"
---      -prof
+      -fprof-auto
+      "-with-rtsopts=-N -p -s -h -i0.1"
+      -prof
 
     -- Modules included in this executable, other than Main.
     other-modules:    Term,

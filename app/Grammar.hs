@@ -48,6 +48,9 @@ class Newable n where
 instance Newable Int where
   new is = succ (maximum is)
 
+instance Newable (Int, Int) where
+  new is = (succ (maximum $ map fst is), (maximum $ map snd is))
+
 instance Newable String where
   new strings = "new_" ++ (show $ succ $ maximum $ map (sum . map fromEnum) strings)
 
