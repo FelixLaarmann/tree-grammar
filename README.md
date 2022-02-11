@@ -1,5 +1,5 @@
 # Restricting tree grammars with term rewriting
-This repository is the prototype implementation for "Restricting tree grammars with term rewriting".
+This is the prototype implementation for "Restricting tree grammars with term rewriting".
 
 ## Build and run
 Simply clone the github repository and use `cabal build` and `cabal run` to build and run the code from  app/Main.hs
