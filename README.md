@@ -2,7 +2,7 @@
 This repository is the prototype implementation for the paper "Restricting tree grammars with term rewriting".
 
 ## Build and run
-Simply clone the github repository and use 'cabal build' and 'cabal run' to build and run the code from  app/Main.hs
+Simply clone the github repository and use `cabal build` and `cabal run` to build and run the code from  app/Main.hs
 
 ## Description
 For testing the algorithms one should use app/Main.hs. The implementation is structured as follows:
