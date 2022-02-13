@@ -13,9 +13,9 @@ For testing the algorithms one should use app/Main.hs. The implementation is str
 - app/Main.hs contains some example calls.
 
 ## Notes and limitation
-Checking emptiness and finiteness for tree automata with disequality constraints (adc's) will only terminate fast if the language of the adc is not empty or infinite.
+Checking emptiness and finiteness for tree automata with disequality constraints (ADCs) will only terminate fast if the language of the ADC is not empty or infinite.
 Otherwise the run times for these EXPTIME-complete algorithms are infeasible.
-If all disequality constraints in an adc are true (`[]` in this implementation), it is equivalent to a finite tree automaton (fta) by simply ignoring the disequality constraints.
-In this case one should use `ftaEmptiness` and `ftaFiniteness` instead of `languageIsEmpty` and `languageIsFinite`, because checking emptiness and finiteness for fta's is much faster then for adc's.
+If all disequality constraints in an ADC are true (`[]` in this implementation), it is equivalent to a finite tree automaton (FTA) by simply ignoring the disequality constraints.
+In this case, one should use `ftaEmptiness` and `ftaFiniteness` instead of `languageIsEmpty` and `languageIsFinite` because checking emptiness and finiteness for fta's is much faster than for adc's.
 
 
