@@ -25,47 +25,30 @@ data RS t v = RS
   } deriving Show
 
 {-
-symbols returns all symbols of a term.
-We assume that application is left-associative and therefor the "root-symbol" of a term is in the
-"left-most" leaf.
-
-symbolsOf :: Eq t => RS t v -> [(t, Int)]
-symbolsOf [] = []
-symbolsOf ((t, t'):ts) = nub $ findSymbols t ++ findSymbols t' ++ symbolsOf ts {-where
-  findSymbols (UVar _) = []
-  findSymbols (UTerm (Symbol f)) = [(f, 0)]
-  findSymbols (UTerm (App l r)) = case symbol l of
-    Just s -> let args = arguments (UTerm (App l r)) in [(s, length $ args)] ++ (args >>= findSymbols)
-    Nothing -> []
-  symbol (UVar _) = Nothing
-  symbol (UTerm (Symbol f)) = Just f
-  symbol (UTerm (App (UTerm (Symbol f)) r)) = Just f
-  symbol (UTerm (App l r)) = symbol l-}
+leftHandSides is the list of left-hand sides of a rewriting system
 -}
-{-
-l is the list of left-hand sides of a rewriting system
--}
-l :: RS t v -> [UTerm (TermV t) v]
-l = map fst . rRules
+leftHandSides :: RS t v -> [UTerm (TermV t) v]
+leftHandSides = map fst . rRules
 
 {-
-l1 is the subset of linear subterms of l, but is constructed directly from a rewriting system
+linearLeftHandSides is the set of linear left-hand sides of the rewriting system
 -}
-l1 :: (BindingMonad (TermV t) v m, Fallible (TermV t) v e, MonadTrans em, MonadError e (em m)) =>
+linearLeftHandSides :: (BindingMonad (TermV t) v m, Fallible (TermV t) v e, MonadTrans em, MonadError e (em m)) =>
        RS t v -> em m [UTerm (TermV t) v]
-l1 = return . filter (isLinear) . l
+linearLeftHandSides = return . filter (isLinear) . leftHandSides
 
 {-
-l2 is the linearization of the non-linear terms in l, constructed directly from a rewriting system
-l2 returns pairs (non-linearized terms, linearized term), such that we have the non-linearized terms
+linearizationsOfNonlinearLeftHandSides is the linearization of the
+non-linear terms in l, constructed directly from a rewriting system
+
+linearizationsOfNonlinearLeftHandSides returns pairs (non-linearized
+terms, linearized term), such that we have the non-linearized terms
 available for the computation of the transition relation of the ADC.
 -}
-l2 :: (BindingMonad (TermV t) v m, Fallible (TermV t) v e, MonadTrans em, MonadError e (em m)) =>
+
+linearizationsOfNonlinearLeftHandSides :: (BindingMonad (TermV t) v m, Fallible (TermV t) v e, MonadTrans em, MonadError e (em m)) =>
        RS t v -> em m [(UTerm (TermV t) v, UTerm (TermV t) v)] --[UTerm (Term t) v]
-l2 x = do --(return $ filter (not . isLinear) $ l x) >>= nubByTerms >>= mapM linearize
-  nlins <- (return $ filter (not . isLinear) $ l x) >>= nubByTerms
+linearizationsOfNonlinearLeftHandSides x = do
+  nlins <- (return $ filter (not . isLinear) $ leftHandSides x) >>= nubByTerms
   lins <- return nlins >>=  mapM linearize
   return $ zip nlins lins
-  
-
-

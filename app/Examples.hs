@@ -100,8 +100,8 @@ sortGrammar = TreeGrammar 2 sortNonTerminals sortTerminals rules where
     (0, Terminal "default" []),
     (0, Terminal "app" [Terminal "inv" [], NonTerminal 0]),
     (0, Terminal "app" [Terminal "app" [Terminal "min" [], NonTerminal 0], NonTerminal 4]),
-    (1, Terminal "id" []), 
-    (1, Terminal "inv" []), 
+    (1, Terminal "id" []),
+    (1, Terminal "inv" []),
     (3, Terminal "app" [Terminal "id" [], NonTerminal 3]),
     (3, Terminal "values" [])
           ]
@@ -180,21 +180,17 @@ boolRS = RS
   [("T", 0), ("F", 0), ("AND", 2)]
   [
     (
-      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "F")) (UTerm $ SymbolV "F"),
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "F")) (UVar $ IntVar 0),
       UTerm $ SymbolV "F"
-    ), --AND(F,F) -> F
+    ), --AND(F,x) -> F
     (
-      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "F")) (UTerm $ SymbolV "T"),
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UVar $ IntVar 0)) (UTerm $ SymbolV "F"),
       UTerm $ SymbolV "F"
-    ), --AND(F,T) -> F
+    ), --AND(x,F) -> F
     (
-      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "T")) (UTerm $ SymbolV "F"),
-      UTerm $ SymbolV "F"
-    ), --AND(T,F) -> F
-    (
-      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "T")) (UTerm $ SymbolV "T"),
-      UTerm $ SymbolV "T"
-    ) --AND(T,T) -> T
+      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UVar $ IntVar 0)) (UVar $ IntVar 0),
+      UVar $ IntVar 0
+    ) --AND(x,x) -> x
   ]
 
 boolRS' :: RS String IntVar
@@ -210,28 +206,10 @@ boolRS' = RS
       UTerm $ SymbolV "F"
     ), --AND(x,F) -> F
     (
-      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UVar $ IntVar 0)) (UVar $ IntVar 0),
-      UVar $ IntVar 0
-    ) --AND(x,x) -> x
-  ]
-
-boolRS'' :: RS String IntVar
-boolRS'' = RS
-  [("T", 0), ("F", 0), ("AND", 2)]
-  [
-    (
-      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "F")) (UVar $ IntVar 0),
-      UTerm $ SymbolV "F"
-    ), --AND(F,x) -> F
-    (
-      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UVar $ IntVar 0)) (UTerm $ SymbolV "F"),
-      UTerm $ SymbolV "F"
-    ), --AND(x,F) -> F
-    (
       UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "T")) (UTerm $ SymbolV "T"),
       UTerm $ SymbolV "T"
     ) --AND(T,T) -> T
-  ] 
+  ]
 
 
 falseTerminals = ["F", "AND"]
@@ -301,7 +279,7 @@ fullBoolRS = RS
       UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "OR") (UVar $ IntVar 0)) (UTerm $ SymbolV "T"),
       UTerm $ SymbolV "T"
     ), --OR(x,T) -> T
-    ( 
+    (
       UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "OR") (UTerm $ SymbolV "F")) (UTerm $ SymbolV "F"),
       UTerm $ SymbolV "F"
     ), --OR(F,F) -> F
@@ -343,7 +321,7 @@ fullBoolRS' = RS
       UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "OR") (UVar $ IntVar 0)) (UTerm $ SymbolV "T"),
       UTerm $ SymbolV "T"
     ), --OR(x,T) -> T
-    ( 
+    (
       UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "OR") (UVar $ IntVar 0)) (UVar $ IntVar 0),
       UVar $ IntVar 0
     ), --OR(F,F) -> F
@@ -374,7 +352,7 @@ labyrinthGrammar n m obstacles start goal = TreeGrammar goal labyrinthNonTermina
   labyrinthNonTerminals = [(x,y) | x <- [0..n], y <- [0..m], (x,y) `notElem` obstacles]
   ups = do
     (x,y) <- labyrinthNonTerminals
-    let pUp = (x, y+1) 
+    let pUp = (x, y+1)
     guard $ pUp `elem` labyrinthNonTerminals
     return $ ((x,y), Terminal "UP" [NonTerminal pUp])
   downs = do

@@ -56,41 +56,7 @@ prettyPrintADC adc = do
   putStrLn "\n\n\n##### Transitions #####\n"
   mapM_ print $ transitions adc
 
-{-
-A run of an ADC A on a ground term T is a mapping rho :: pos(T) -> transitions(A).
-An ADC can be non-deterministic, which can simply be implemented with lists
-in the codomain of rho.
-
-A run is called a weak run, if the disequality constraints are not necessarily
-satisfied.
-
-A ground term is accepted by an ADC if there is a run on this term such that rho([])
-is a transition whose target is a final state.
--}
-
-nonDetWeakRun :: (Eq q, Eq t) => ADC q t -> Term t -> Pos -> [Transition q t]
-nonDetWeakRun adc t p
-  | elem p (pos t) = do
-      Just sp <- return $ t `symbolAtPos` p
-      guard $ sp `elem` (map fst $ findSymbols t)
-      trans <- filter ((== sp) . symbol) $ transitions adc
-      case zip [1..] $ fromState trans of
-        [] -> return trans --transitions with arity 0 are valid without restrictions
-        ps -> do
-          guard $ and $ do
-            (i, qi) <- ps --for each state of the domain
-            return $ not $ null $ filter ((== qi) . target) $ nonDetWeakRun adc t $ p ++ [i]
-            --we have to check, if there is a run mapping its position to a transition with itself as target
-          return trans
-  | otherwise = []
-
-
-weakRun :: (Eq q, Eq t) => ADC q t -> Term t -> Pos -> Maybe (Transition q t)
-weakRun adc t p = do
-  case nonDetWeakRun adc t p of
-    [] -> Nothing
-    (t:ts) -> return t
-
+{- Are disequality constraints satisfied? -}
 satisfies :: (Eq t) => Term t -> [[(Pos, Pos)]] -> Bool
 satisfies t conjunction = and $ map (satisfiesDisjunction t) conjunction where
   satisfiesDisjunction t disjunction = or $ map (satisfiesDisEq t) disjunction
@@ -101,31 +67,6 @@ satisfies t conjunction = and $ map (satisfiesDisjunction t) conjunction where
           Just tp2 -> tp1 == tp2
           Nothing -> False
         Nothing -> False
-
-nonDetRun :: (Eq q, Eq t) => ADC q t -> Term t -> Pos -> [Transition q t]
-nonDetRun adc t p
-  | elem p (pos t) = do
-      ts <- nonDetWeakRun adc t p
-      Just tp <- return $ t `termAtPos` p
-      guard $ satisfies tp $ dConstraint ts
-      return ts
-  | otherwise = []
-
-run :: (Eq q, Eq t) => ADC q t -> Term t -> Pos -> Maybe (Transition q t)
-run adc t p
-  | elem p (pos t) = do
-      trans <- weakRun adc t p
-      tp <- t `termAtPos` p
-      guard $ satisfies tp $ dConstraint trans
-      return trans
-  | otherwise = Nothing
-
-accepts :: (Eq q, Eq t) => ADC q t -> Term t -> Bool
-accepts adc t = isJust $ do
-  trans <- run adc t []
-  guard $ target trans `elem` final adc
-  return True
-
 
 {-
 modSym computes a relation modulo symmetry
@@ -159,7 +100,7 @@ pi = maximum . (0:) . (map (\(l,r) -> max (length l) (length r))) . atoms
 (q0 r) is the list of all strict subterms of terms in the union of l1 and l2 (modulo renaming of variables)
 for a rewriting system r, plus two special states:
 - fresh variable x, which will accept all terms
-- AcceptOnlyReducible which will accept only reducible terms of r 
+- AcceptOnlyReducible which will accept only reducible terms of r
 -}
 
 data Q0 t v =  AcceptOnlyReducible | Q !(UTerm (TermV t) v) deriving (Show)
@@ -177,8 +118,8 @@ deriving instance Ord (Q0 String IntVar)
 q0withoutAOR :: (BindingMonad (TermV t) v m, Fallible (TermV t) v e, MonadTrans em, MonadError e (em m)) =>
                  RS t v -> em m [UTerm (TermV t) v]
 q0withoutAOR r = do
-  lin <- l1 r
-  nlin' <- l2 r
+  lin <- linearLeftHandSides r
+  nlin' <- linearizationsOfNonlinearLeftHandSides r
   let nlin = map snd nlin'
   nubbed <- nubByTerms $ (lin >>= strictSubTermsV) ++ (nlin >>= strictSubTermsV)
   --let modRenaming = filter noUVar nubbed
@@ -234,7 +175,7 @@ deltaR' rs qr = tops ++ constraints where
 f(q_u_1,...,q_u_n)-c−> q_u where q_u_1,...,q_u_n, q_u ∈ Qr and:
 -}
   symbols = symbolsOf rs
-  l1s = (either (\_ -> []) (\x -> x) $ evalFBM $ l1 rs)
+  l1s = (either (\_ -> []) (\x -> x) $ evalFBM $ linearLeftHandSides rs)
   nArySymbols = nub [(map fst $ filter ((== n) . snd) symbols, n) | (f, n) <- symbols]
   instanceOfSome t ls = filter (\x -> either (\_ -> False) (\x -> x) $ evalFBM $ (x <:= t)) ls
   fromStates n = sequence $ (take n) $ repeat qr
@@ -260,7 +201,7 @@ f(q_u_1,...,q_u_n)-c−> q_u where q_u_1,...,q_u_n, q_u ∈ Qr and:
         guard (elemByTerms' u qr)
         return $ Transition s (map Q args) (Q $ u) form where
           form = do
-            l <- either (\_ -> []) (\x -> x) $ evalFBM $ l2 rs
+            l <- either (\_ -> []) (\x -> x) $ evalFBM $ linearizationsOfNonlinearLeftHandSides rs
             --l is a pair of the prelinearized and the linearized terms
             guard $ isRight $ evalFBM $ unify u $ snd l --here the linearized one has to be used
             guard $ not $ null $ instanceOfSome (treeToTermV s args) [snd l] --this guard is the result of a discussion with Lukasz and has to be added in the paper
@@ -273,7 +214,7 @@ f(q_u_1,...,q_u_n)-c−> q_u where q_u_1,...,q_u_n, q_u ∈ Qr and:
       Left _ -> mzero
 
 {-
-constructNfADC' constructs an automata with disequality constraints (ADC) from a given
+constructNfADC' constructs an automaton with disequality constraints (ADC) from a given
 rewriting system rs.
 This function implements phase 2 of Lukasz algorithm.
 
@@ -292,7 +233,7 @@ constructNfADC' rs = ADC{
      \q0wQr -> return $ AcceptOnlyReducible : (map Q q0wQr))
 
 {-
-constructNfADC constructs an automata with disequality constraints (ADC) from a given
+constructNfADC constructs an automaton with disequality constraints (ADC) from a given
 rewriting system rs.
 This function implements phase 2 of Lukasz algorithm.
 
@@ -318,7 +259,7 @@ constructNfADC :: RS String IntVar -> ADC Int String
 constructNfADC = simplifyStates . constructNfADC'
 
 {-
-constructADC constructs an automata with disequality constraints (ADC)
+constructADC constructs an automaton with disequality constraints (ADC)
 from a given TreeGrammar.
 
 This function implements phase 1 of Lukasz algorithm.
@@ -418,11 +359,8 @@ eIfIntersectionFin :: (Eq nt, Newable nt) => TreeGrammar String nt -> RS String 
 eIfIntersectionFin g r = if n == 0 then Left a else Right (n, productADC a (heightADC n f)) where
   a = productADC (constructADC g) (constructNfADC r)
   f = intersectSymbols r g
-  --rs = sizeR r
-  --fac i = product [1..i] --http://www.willamette.edu/~fruehr/haskell/evolution.html
   n = div (371828182845 * (toInteger $ length $ states a) *
            (2^(toInteger $ c a)) * (fac $ toInteger $ c a) * (toInteger $ pi a)) 100000000000
-  --n = div (371828182845 * (sizeG g) * (2^(rs^3 + rs + 2)) * (fac $ rs^3) * rs) 100000000000
 
 --lists and MultiSets do not implement this for Ord
 multiSetExtension :: Ord a => (a -> a -> Bool) ->  MultiSet.MultiSet a -> MultiSet.MultiSet a -> Bool
@@ -434,19 +372,13 @@ multiSetExtension ord m n = or $ do
   return $ MultiSet.fold (\a b -> b && ord x'' a) True y
 
 (>>>) :: (Ord t) => Term t -> Term t -> Bool
-(>>>) rho1 rho2 = lexProd (i rho1) (i rho2) where
-  i rho = (depth rho, MultiSet.fromList $ strictSubTerms rho, rho)
-  lexProd (d, m, r) (d', m', r') | d == d' = if (m == m') then lpo r r' else multiSetExtension (>>>) m m'
-                                 | otherwise = d > d'
-
-(>>>>) :: (Ord t) => Term t -> Term t -> Bool
-(>>>>) rho1 rho2 = lexProd (depth rho1, rho1) (depth rho2, rho2) where
+(>>>) rho1 rho2 = lexProd (depth rho1, rho1) (depth rho2, rho2) where
   lexProd (d, r) (d', r') | d == d' = r > r'
                           | otherwise = d > d'
 
 compareTerm :: (Ord t) => Term t -> Term t -> Ordering
 compareTerm t1 t2 | t1 == t2 = EQ
-                  | t1 >>>> t2 = GT
+                  | t1 >>> t2 = GT
                   | otherwise = LT
 
 newtype OrdTerm t = OrdTerm {getTerm :: Term t} deriving (Eq, Show)
@@ -454,35 +386,18 @@ newtype OrdTerm t = OrdTerm {getTerm :: Term t} deriving (Eq, Show)
 instance Ord t => Ord (OrdTerm t) where
   compare l r = compareTerm (getTerm l) (getTerm r)
 
-checkForSequence' :: (Ord t, Ord q) => Term (Transition q t) -> Pos -> Term (Transition q t)
-     -> [Term (Transition q t)] -> Int
-checkForSequence' rho p r' = foldl cond 0 where
-    cond n e = case substituteAtPos rho e p of
-      Just pump -> if (r' >>> e) && (not $ containsCloseEq pump p) then n+1 else n
-      Nothing -> n
-
---checkForSequence :: (Ord t, Ord q) => Term (Transition q t) -> Integer -> Pos -> Term (Transition q t)
---    -> [Term (Transition q t)] -> Bool
-checkForSequence rho 0 p r' _ = True
-checkForSequence rho b p r' [] = False
-checkForSequence rho b p r' (r:rs) = case substituteAtPos rho r p of
-      Just pump -> if (r' >>> r) && (not $ containsCloseEq pump p)
-        then checkForSequence rho (b-1) p r' rs
-        else checkForSequence rho b p r' rs
-      Nothing -> checkForSequence rho b p r' rs
-
-checkForSequence'' rho 0 p _ = True
-checkForSequence'' rho b p [] = False
-checkForSequence'' rho b p (r:rs) = case substituteAtPos rho r p of
+checkForSequence rho 0 p _ = True
+checkForSequence rho b p [] = False
+checkForSequence rho b p (r:rs) = case substituteAtPos rho r p of
       Just pump -> if (not $ containsCloseEq pump p)
-        then checkForSequence'' rho (b-1) p rs
-        else checkForSequence'' rho b p rs
-      Nothing -> checkForSequence'' rho b p rs
+        then checkForSequence rho (b-1) p rs
+        else checkForSequence rho b p rs
+      Nothing -> checkForSequence rho b p rs
 
 containsCloseEq :: (Eq t, Eq q) => Term (Transition q t) -> Pos -> Bool
 containsCloseEq rho p = or $ do
     let posRho = pos rho
-    p' <- posRho 
+    p' <- posRho
     guard $ p' `isPrefixOf` p -- p' <= p
     Just s <- return $ symbolAtPos rho p'
     (pi, pi') <- (nub $ join $ dConstraint s)
@@ -494,7 +409,6 @@ containsCloseEq rho p = or $ do
     Just t <- return $ termAtPos rho ppi
     Just t' <- return $ termAtPos rho ppi'
     return $ t == t'
-
 
 isProperPrefixOf p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
 
@@ -516,14 +430,13 @@ c' adc = do --TODO c' can be optimized similar to s
     guard $ suf `isSuffixOf` pi
     return suf
 
---s(A)is the number of distinct suffixes of positions π,π′ in an atomic constraint π̸=π′ in a (!!!) rule of A
+--s(A)is the number of distinct suffixes of positions π,π′ in an atomic constraint π̸=π′ in a rule of A
 s :: ADC q t -> Int
 s adc = length $ nub $ do
     r <- transitions adc
     atom <- (modSym $ nub $ join $ dConstraint r) --distinct atomic constraints
     let pi = fst atom
     let pi' = snd atom
-    --nub $ (suffixes pi) ++ (suffixes pi') --for proper suffixes
     nub $ (pi : suffixes pi) ++ (pi' : suffixes pi') --for suffixes
     where
       suffixes [] = []
@@ -533,10 +446,10 @@ s adc = length $ nub $ do
 
 -- n(A′) is the maximum number of atomic constraints in a rule of A′
 n :: ADC q t -> Double
-n adc = fromIntegral $ maximum $ do 
+n adc = fromIntegral $ maximum $ do
     r <- transitions adc
     return $ length $ join $ dConstraint r
---d(A′) is the maximum length of |π| or |π′| in an atomic constraint π̸=π′ in a (!!!) rule of A′
+--d(A′) is the maximum length of |π| or |π′| in an atomic constraint π̸=π′ in a rule of A′
 d :: ADC q t -> Int
 d adc = maximum $ 0 : do
     r <- transitions adc
@@ -549,22 +462,6 @@ h adc = div (371828182845 * (toInteger $ length $ states adc) *
 
 fac i = product [1..i]
 
-oldB :: Eq t => ADC q t -> Transition q t -> Integer
-oldB adc r = let sizeQ = toInteger $ length $ states adc in
-    let d' = fromIntegral $ d adc in
-      if d' == 0
-      then
-        max
-        (floor $  gamma * (fromIntegral $ sizeQ^2))
-        (sizeQ * (toInteger $ length $ nub $ map symbol $ transitions adc))
-      else
-        max
-        (floor $  gamma * (fromIntegral $ sizeQ^2) * (2^(round $ delta * d' * (n adc) * (log $ 2 * d' * (n adc)))))
-        (sizeQ * (toInteger $ length $ nub $ map symbol $ transitions adc))
-        where
-          gamma = 331.4348136746072
-          delta = 11.770780163555855
-
 newBfin :: Eq t => ADC q t -> Integer
 newBfin adc =
   max
@@ -572,7 +469,7 @@ newBfin adc =
   ((floor sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
   where
     sizeQ :: Double
-    sizeQ = fromIntegral $ (toInteger $ length $ states adc) * (h adc) 
+    sizeQ = fromIntegral $ (toInteger $ length $ states adc) * (h adc)
     euler :: Double
     --euler = 2.71828182845
     euler = sum $ map (\i -> 1 / (fromIntegral $ fac i)) [1 .. s adc]
@@ -597,26 +494,9 @@ newBempty adc =
     gamma = let d' = fromIntegral $ d adc in let n' = n adc in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta)
     k = ceiling $ (beta + sqrt (beta^2 + (4 * gamma))) / 2
 
-languageIsEmpty :: (Ord q, Ord t) => ADC q t -> Bool
-languageIsEmpty !adc = not $ fix (e adc) 0 Map.empty Set.empty where
-  {-
-  sizeQ :: Double
-  sizeQ = fromIntegral $ length $ states adc
-  euler :: Double
-  euler = 2.71828182845
-  delta r = let s' = s r in sizeQ * 2^s' * (fromIntegral $ fac s')
-  n' = n adc
-  -}
+checkEmptiness :: (Ord q, Ord t) => Integer -> Integer -> ADC q t -> Bool
+checkEmptiness h' b !adc = not $ fix (e adc) 0 Map.empty Set.empty where
   c'' = c' adc
-  {-
-  beta r = (fromIntegral $ 1 + d r) * n' * (1.0 + euler * (delta r))
-  gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
-  k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
-  b r = max
-        ((ceiling $ beta r) * (k r) + (ceiling $ gamma r))
-        ((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
-  -}
-  b = newBempty adc
   d' = d adc
   f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q (Set.Set (OrdTerm (Transition q t)))
              -> (Bool, Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
@@ -639,19 +519,17 @@ languageIsEmpty !adc = not $ fix (e adc) 0 Map.empty Set.empty where
           guard $ (length p) <= (d' + 1)
           Just s <- return $ symbolAtPos rho p --s is a transition, because rho is a term over delta
           Just rhos' <- return $ Map.lookup (target s) eStar
-          --guard $ b' <= (toInteger $ length rhos')
           Just rhoP <- return $ termAtPos rho p
           let descRhos = map getTerm $ Set.toDescList rhos'
-          Just smallerRuns <- return $ (findIndex (\x -> rhoP >>>> x) descRhos >>= \i -> return $ drop i descRhos)
+          Just smallerRuns <- return $ (findIndex (\x -> rhoP >>> x) descRhos >>= \i -> return $ drop i descRhos) -- TODO: this can be done with a logarithmic number of comparisons (using Set.findIndex and Set.splitAt)
           guard $ b <= (toInteger $ length smallerRuns)
-          return $ not $ checkForSequence'' rho b p smallerRuns --for all p there exists no sequence
+          return $ not $ checkForSequence rho b p smallerRuns --for all p there exists no sequence
     let trgt = target r
-    let stop' = trgt `elem` (final adc')
+    let stop' = trgt `elem` (final adc') && i >= h'
     if and vs
       then --only add terms to eStar, where no sequence exists
-      --return (stop', eStar, Set.insert rho seen) else
       return (stop', Map.insertWith (Set.union) trgt (Set.singleton $ OrdTerm rho) eStar, Set.insert rho seen)
-      else
+    else
       return (stop', eStar, Set.insert rho seen)
   g (stop, es, seen) (stop', rho, seen') = (stop || stop', Map.unionWith Set.union es rho, Set.union seen seen') --g is outer for loop, for all transitions
   e :: (Ord q, Ord t) => ADC q t -> Integer -> Map.Map q (Set.Set (OrdTerm (Transition q t))) ->
@@ -661,116 +539,17 @@ languageIsEmpty !adc = not $ fix (e adc) 0 Map.empty Set.empty where
   fix f i e r | (\(x, _, _) -> x) (f i e r) = True --if e already contains an accepting run, return true
               | (\(_, x, _) -> x) (f i e r) == e = False --if fixpoint is reached, but no accepting run found, return False
               | otherwise = fix f (i+1) ((\(_, x, _) -> x) $ f i e r) ((\(_, _, y) -> y) $ f i e r)
-{-
-  containsCloseEq rho p = or $ do
-    let posRho = pos rho
-    p' <- posRho 
-    guard $ p' `isPrefixOf` p 
-    Just s <- return $ symbolAtPos rho p'
-    let pis = (nub $ join $ dConstraint s) >>= \(a,b) -> [a,b]
-    pi <- pis
-    pi' <- pis
-    guard $ (p' ++ pi) `elem` posRho
-    guard $ (p' ++ pi') `elem` posRho
-    guard $ p' `isProperPrefixOf` pi || p' `isProperPrefixOf` pi' 
-    Just t <- return $ termAtPos rho (p' ++ pi)
-    Just t' <- return $ termAtPos rho (p' ++ pi')
-    return $ t == t'
-  isProperPrefixOf p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
--}
+
+languageIsEmpty :: (Ord q, Ord t) => ADC q t -> Bool
+languageIsEmpty !adc = checkEmptiness 0 (newBempty adc) adc
 
 languageIsFin :: (Ord q, Ord t) => ADC q t -> Bool
-languageIsFin !adc = not $ fix (e adc) 0 Map.empty Set.empty where
-  --fac i = product [1..i]
-  {-
-  h :: Integer
-  h = div (371828182845 * (toInteger $ length $ states adc) *
-           (2^(toInteger $ c adc)) * (fac $ toInteger $ c adc) * (1 + (toInteger $ pi adc))) 100000000000
-  sizeQ :: Double
-  sizeQ = fromIntegral $ (toInteger $ length $ states adc) * h
-  euler :: Double
-  euler = 2.71828182845
-  delta r = let s' = s r in sizeQ * 2^s' * (fromIntegral $ fac s')
-  n' = n adc
-  -}
-  c'' = c' adc
-  {-
-  beta r = (fromIntegral $ 1 + d r) * n' * (1.0 + euler * (delta r))
-  gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
-  k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
-  b r = max
-        ((ceiling $ beta r) * (k r) + (ceiling $ gamma r))
-        ((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
-  -}
-  h' = h adc
-  b = newBfin adc
-  d' = d adc
-  f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q (Set.Set (OrdTerm (Transition q t)))
-             -> (Bool, Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
-             -> Transition q t
-             -> (Bool, Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
-  f i adc' eStar (stop, es, seen) r = foldl g (stop, es, seen) $ do --f is inner for loop (for all rho and phi_i in E*)
-    let dom = fromState r
-    let m = length $ dom
-    rhos <- sequence $ do
-          qI <- dom
-          Just rhoIs <- return $ Map.lookup qI eStar
-          return $ map getTerm $ Set.toList rhoIs
-    guard $ length rhos == m
-    let rho = treeToTerm r rhos --for each rule build all terms over delta
-    guard $ satisfies rho $ dConstraint r --But we still need to check, whether the constraints are satisfied.
-    guard $ Set.notMember rho seen --and test, whether we have analysed rho before
-    let vs = do
-          p <- (pos rho)
-          guard $ not $ p `elem` c''
-          guard $ (length p) <= (d' + 1)
-          Just s <- return $ symbolAtPos rho p --s is a transition, because rho is a term over delta
-          Just rhos' <- return $ Map.lookup (target s) eStar
-          --guard $ b' <= (toInteger $ length rhos')
-          Just rhoP <- return $ termAtPos rho p
-          let descRhos = map getTerm $ Set.toDescList rhos'
-          Just smallerRuns <- return $ (findIndex (\x -> rhoP >>>> x) descRhos >>= \i -> return $ drop i descRhos)
-          guard $ b <= (toInteger $ length smallerRuns)
-          return $ not $ checkForSequence'' rho b p smallerRuns --for all p there exists no sequence
-    let trgt = target r
-    let stop' = trgt `elem` (final adc') && i > h'
-    if and vs
-      then --only add terms to eStar, where no sequence exists
-      --return (stop', eStar, Set.insert rho seen) else
-      return (stop', Map.insertWith (Set.union) trgt (Set.singleton $ OrdTerm rho) eStar, Set.insert rho seen)
-      else
-      return (stop', eStar, Set.insert rho seen)
-  g (stop, es, seen) (stop', rho, seen') = (stop || stop', Map.unionWith Set.union es rho, Set.union seen seen') --g is outer for loop, for all transitions
-  e :: (Ord q, Ord t) => ADC q t -> Integer -> Map.Map q (Set.Set (OrdTerm (Transition q t))) ->
-    Set.Set (Term (Transition q t)) ->
-    (Bool, Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
-  e adc' i eStar seen = foldl (f i adc' eStar) (False, Map.empty, seen) $ transitions adc'
-  fix f i e r | (\(x, _, _) -> x) (f i e r) = True --if e already contains an accepting run, return true
-              | (\(_, x, _) -> x) (f i e r) == e = False --if fixpoint is reached, but no accepting run found, return False
-              | otherwise = fix f (i+1) ((\(_, x, _) -> x) $ f i e r) ((\(_, _, y) -> y) $ f i e r)
-{-
-  containsCloseEq rho p = or $ do
-    let posRho = pos rho
-    p' <- posRho 
-    guard $ p' `isPrefixOf` p 
-    Just s <- return $ symbolAtPos rho p'
-    let pis = (nub $ join $ dConstraint s) >>= \(a,b) -> [a,b]
-    pi <- pis
-    pi' <- pis
-    guard $ (p' ++ pi) `elem` posRho
-    guard $ (p' ++ pi') `elem` posRho
-    guard $ p' `isProperPrefixOf` pi || p' `isProperPrefixOf` pi' 
-    Just t <- return $ termAtPos rho (p' ++ pi)
-    Just t' <- return $ termAtPos rho (p' ++ pi')
-    return $ t == t'
-  isProperPrefixOf p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
--}
+languageIsFin !adc = checkEmptiness (h adc) (newBfin adc) adc
 
 intersectionIsFin :: (Ord nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> Either Bool (Integer, Bool)
 intersectionIsFin g r = case eIfIntersectionFin g r of
     Left a -> Left $ languageIsEmpty a
     Right (n, a) -> Right $ (n, languageIsEmpty a)
-
 
 intersectionIsEmpty :: (Ord nt, Newable nt) => TreeGrammar String nt -> RS String IntVar -> Bool
 intersectionIsEmpty g r = languageIsEmpty a where
@@ -854,7 +633,7 @@ ftaInfiniteness adc = (not $ null $ final adc') && (checkLoops $ fix reach $ fin
           | otherwise = fix f (f x)
   checkLoops xs = or $ do
     x <- xs
-    return $ x `elem` (loop x)    
+    return $ x `elem` (loop x)
 
 ftaFiniteness :: Ord q => ADC q t -> Bool
 ftaFiniteness adc = (not $ null $ final adc') && (not $ checkLoops $ fix reach $ final adc') where
@@ -873,122 +652,4 @@ ftaFiniteness adc = (not $ null $ final adc') && (not $ checkLoops $ fix reach $
           | otherwise = fix f (f x)
   checkLoops xs = or $ do
     x <- xs
-    return $ x `elem` (loop x)    
-{-
-Everything below is for Debugging...
--}
-
---enumerateLanguage :: (Ord q, Ord t) => ADC q t -> Map.Map Integer (Set.Set (Term t))
-enumerateLanguage maxHeight !adc = fix (e adc) 0 Map.empty Map.empty Set.empty where
-  sizeQ :: Double
-  sizeQ = fromIntegral $ length $ states adc
-  euler :: Double
-  euler = 2.71828182845
-  delta r = let s' = s r in sizeQ * 2^s' * (fromIntegral $ fac s')
-  n' = n adc
-  c'' = c' adc
-  beta r = (fromIntegral $ 1 + d r) * n' * (1.0 + euler * (delta r))
-  gamma r = let d' = fromIntegral $ d r in (1 + 2 * d' * n' * euler) * (d' + 1) * n' * (delta r)
-  k r = let beta' = beta r in ceiling $ (beta' + sqrt (beta'^2 + (4 * gamma r))) / 2
-  b r = max
-        ((ceiling $ beta r) * (k r) + (ceiling $ gamma r))
-        ((ceiling $ sizeQ) * (toInteger $ length $ nub $ map symbol $ transitions adc))
-  f ::  (Ord q, Ord t) => Integer -> ADC q t -> Map.Map q (Set.Set (OrdTerm (Transition q t)))
-             -> (Map.Map Integer (Set.Set (Term t)), Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
-             -> Transition q t
-             -> (Map.Map Integer (Set.Set (Term t)), Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
-  f i adc' eStar (res, es, seen) r = foldl' (g i) (res, es, seen) $ do --f is inner for loop (for all rho and phi_i in E*)
-    let dom = fromState r
-    let m = length $ dom
-    rhos <- sequence $ do
-          qI <- dom
-          Just rhoIs <- return $ Map.lookup qI eStar
-          return $ map getTerm $ Set.toList rhoIs
-    guard $ length rhos == m
-    let rho = treeToTerm r rhos --for each rule build all terms over delta
-    guard $ satisfies rho $ dConstraint r --But we still need to check, whether the constraints are satisfied.
-    --and test, whether we have analysed rho before
-    --let trgt = target r
-    guard $ Set.notMember rho seen
-    {-
-    let b' = b r
-    let vs = do
-          p <- (pos rho)
-          guard $ not $ p `elem` c''
-          guard $ (length p) <= ((d r) + 1)
-          Just s <- return $ symbolAtPos rho p --s is a transition, because rho is a term over delta
-          Just rhos' <- return $ Map.lookup (target s) eStar
-          --guard $ b' <= (toInteger $ length rhos')
-          Just rhoP <- return $ termAtPos rho p
-          let descRhos = map getTerm $ Set.toDescList rhos'
-          Just smallerRuns <- return $ (findIndex (\x -> rhoP >>>> x) descRhos >>= \i -> return $ drop i descRhos)
-          guard $ b' <= (toInteger $ length smallerRuns)
-          return $ not $ checkForSequence'' rho b' p smallerRuns --for all p there exists no sequence
-    --guard $ and vs
-    -}
-    let trgt = target r
-    if trgt `elem` final adc'--and vs
-      then --only add terms to eStar, where no sequence exists
-      --return (Map.singleton i (Set.singleton $ fmap symbol rho), eStar, Set.insert rho seen) else
-      return (Map.singleton i (Set.singleton $ fmap symbol rho), Map.insertWith (Set.union) trgt (Set.singleton $ OrdTerm rho) eStar, Set.insert rho seen)
-      else
-      return (Map.empty, Map.insertWith (Set.union) trgt (Set.singleton $ OrdTerm rho) eStar, Set.insert rho seen)
-  g i (res, es, seen) (res', rho, seen') = (Map.unionWith (Set.union) res res', Map.unionWith Set.union es rho, Set.union seen seen')  --g is outer for loop, for all transitions
-  e :: (Ord q, Ord t) => ADC q t -> Integer -> Map.Map q (Set.Set (OrdTerm (Transition q t))) ->
-     Map.Map Integer (Set.Set (Term t)) -> Set.Set (Term (Transition q t)) ->
-    (Map.Map Integer (Set.Set (Term t)), Map.Map q (Set.Set (OrdTerm (Transition q t))), Set.Set (Term (Transition q t)))
-  e adc' i eStar terms seen = foldl' (f i adc' eStar) (terms, Map.empty, seen) $ transitions adc'
-  fix f i e t m  | (\(_, x, _) -> x) (f i e t m) == e = (\(x, _, _) -> x) (f i e t m) --stop if fixpoint is reached
-               | i == maxHeight = (\(x, _, _) -> x) (f i e t m)
-               | otherwise = fix f (i+1)
-                 ((\(_, x, _) -> x) $ f i e t m) ((\(x, _, _) -> x) $ f i e t m) ((\(_, _, x) -> x) $ f i e t m)
-{-
-  containsCloseEq rho p = or $ do
-    let posRho = pos rho
-    p' <- posRho 
-    guard $ p' `isPrefixOf` p -- p' <= p
-    Just s <- return $ symbolAtPos rho p'
-    (pi, pi') <- (nub $ join $ dConstraint s)
-    --pi <- pis
-    --pi' <- pis
-    let ppi = (p' ++ pi)
-    let ppi' = (p' ++ pi')
-    guard $ ppi `elem` posRho
-    guard $ ppi' `elem` posRho
-    guard $ p `isProperPrefixOf` ppi || p `isProperPrefixOf` ppi'
-    Just t <- return $ termAtPos rho ppi
-    Just t' <- return $ termAtPos rho ppi'
-    return $ t == t'
-  isProperPrefixOf p1 p2 = isPrefixOf p1 p2 && (not $ p1 == p2)
--}
-{-
-boolRS' :: RS String IntVar
-boolRS' = RS
-  [("T", 0), ("F", 0), ("AND", 2)]
-  [
-    (
-      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UTerm $ SymbolV "F")) (UVar $ IntVar 0),
-      UTerm $ SymbolV "F"
-    ),
-    (
-      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UVar $ IntVar 0)) (UTerm $ SymbolV "F"),
-      UTerm $ SymbolV "F"
-    ),
-    (
-      UTerm $ AppV (UTerm $ AppV (UTerm $ SymbolV "AND") (UVar $ IntVar 0)) (UVar $ IntVar 0),
-      UVar $ IntVar 0
-    )
-  ]
-
-boolTerminals = ["T", "F", "AND"]
-
-boolNonTerminals = [0]
-
-boolGrammar :: TreeGrammar String Int
-boolGrammar = TreeGrammar 0 boolNonTerminals boolTerminals rules where
-  rules = [
-    (0, Terminal "T" []),
-    (0, Terminal "F" []),
-    (0, Terminal "AND" [NonTerminal 0, NonTerminal 0])
-          ]
--}
+    return $ x `elem` (loop x)

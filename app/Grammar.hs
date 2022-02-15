@@ -61,13 +61,6 @@ instance Newable (UTerm (TermV String) IntVar) where
     symbols (UTerm (AppV l r) :ls) = symbols [l] ++ symbols [r] ++ symbols ls
     symbols [] = []
 
-{-
-instance Newable a => Newable (Q0 a) where
-  new = new . (>>= fromQ) where
-    fromQ AcceptOnlyReducible = []
-    fromQ (Q x) = x
--}
-
 iterateUntilFix f x = let next = f x in if (x == next) then x else iterateUntilFix f next
 
 transitiveClosure :: (Eq t, Eq nt) => [(nt, T t nt)] -> [(nt, T t nt)]
@@ -94,7 +87,3 @@ normalize tg  = TreeGrammar (axiom tg) (nonTerminals tg') (terminals tg) ((rules
   alphaRule _ = True
   replace (a1, NonTerminal _) = [(a1, alpha) | (ai, alpha) <- alphaRules, elem (a1, NonTerminal ai) tc]
   replace r = [r]
-
-
-
-
